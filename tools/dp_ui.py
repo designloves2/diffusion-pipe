@@ -1368,6 +1368,52 @@ def saved_checkpoints(choice: str) -> str:
     return "\n".join(lines)
 
 
+def _run_ps(script: str, timeout: int = 120) -> str:
+    """Run a PowerShell script from WSL and return stdout text."""
+    try:
+        r = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-Command", script],
+            capture_output=True, text=True, timeout=timeout,
+        )
+        return (r.stdout or "").strip()
+    except Exception:
+        return ""
+
+
+def browse_folder(current: str = "") -> str:
+    """Open a Windows FolderBrowserDialog and return the selected path."""
+    ps = r"""
+Add-Type -AssemblyName System.Windows.Forms
+$d = New-Object System.Windows.Forms.FolderBrowserDialog
+$d.Description = "폴더를 선택하세요"
+try { $d.UseDescriptionForTitle = $true } catch {}
+$d.ShowNewFolderButton = $true
+$r = $d.ShowDialog()
+if ($r -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }
+"""
+    result = _run_ps(ps)
+    return result if result else current
+
+
+def browse_file(current: str = "", filter_str: str = "All files (*.*)|*.*") -> str:
+    """Open a Windows OpenFileDialog and return the selected file path."""
+    ps = f"""
+Add-Type -AssemblyName System.Windows.Forms
+$d = New-Object System.Windows.Forms.OpenFileDialog
+$d.Title = "파일을 선택하세요"
+$d.Filter = "{filter_str}"
+$d.CheckFileExists = $true
+$r = $d.ShowDialog()
+if ($r -eq [System.Windows.Forms.DialogResult]::OK) {{ Write-Output $d.FileName }}
+"""
+    result = _run_ps(ps)
+    return result if result else current
+
+
+_SF = "SafeTensors (*.safetensors)|*.safetensors|All files (*.*)|*.*"
+_SF_GGUF = "Model files (*.safetensors;*.gguf)|*.safetensors;*.gguf|All files (*.*)|*.*"
+
+
 def refresh_configs():
     import gradio as gr
     return gr.update(choices=list_configs())
@@ -1484,7 +1530,7 @@ def _extract_paths(model_key: str, ms: dict) -> tuple[str, str, str, str, str]:
 def load_config_to_ui(choice: str):
     import gradio as gr
     no = gr.update()
-    _N = 37  # outputs after (msg, accordion)
+    _N = 41  # outputs after (msg, accordion); 4 extra for vae/te/te2/adapter col visibility
 
     if not choice:
         return ("",  gr.update()) + (no,) * _N
@@ -1576,10 +1622,14 @@ def load_config_to_ui(choice: str):
         gr.update(value=dataset_dir),
         gr.update(value=output_d),
         gr.update(value=main_p,  label=info["main_label"]),
-        gr.update(value=vae_p,   visible=info["vae_label"]     is not None, label=info["vae_label"]     or "VAE path"),
-        gr.update(value=te_p,    visible=info["te_label"]      is not None, label=info["te_label"]      or "Text encoder / LLM path"),
-        gr.update(value=te2_p,   visible=info["te2_label"]     is not None, label=info["te2_label"]     or "Secondary text encoder"),
-        gr.update(value=adp_p,   visible=info["adapter_label"] is not None, label=info["adapter_label"] or "Adapter / extra path"),
+        gr.update(visible=info["vae_label"]     is not None),   # ui_vae_col
+        gr.update(value=vae_p,   label=info["vae_label"]     or "VAE path"),
+        gr.update(visible=info["te_label"]      is not None),   # ui_te_col
+        gr.update(value=te_p,    label=info["te_label"]      or "Text encoder / LLM path"),
+        gr.update(visible=info["te2_label"]     is not None),   # ui_te2_col
+        gr.update(value=te2_p,   label=info["te2_label"]     or "Secondary text encoder"),
+        gr.update(visible=info["adapter_label"] is not None),   # ui_adapter_col
+        gr.update(value=adp_p,   label=info["adapter_label"] or "Adapter / extra path"),
         gr.update(value=f"ℹ️ **{info['notes']}**"),
         gr.update(value=resolution),
         gr.update(value=min_ar),
@@ -1618,22 +1668,14 @@ def build_ui():
         info = MODEL_UI.get(key, MODEL_UI["krea2"])
         return [
             gr.update(label=info["main_label"]),
-            gr.update(
-                visible=info["vae_label"] is not None,
-                label=info["vae_label"] or "VAE path",
-            ),
-            gr.update(
-                visible=info["te_label"] is not None,
-                label=info["te_label"] or "Text encoder / LLM path",
-            ),
-            gr.update(
-                visible=info["te2_label"] is not None,
-                label=info["te2_label"] or "Secondary text encoder",
-            ),
-            gr.update(
-                visible=info["adapter_label"] is not None,
-                label=info["adapter_label"] or "Adapter / extra path",
-            ),
+            gr.update(visible=info["vae_label"] is not None),
+            gr.update(label=info["vae_label"] or "VAE path"),
+            gr.update(visible=info["te_label"] is not None),
+            gr.update(label=info["te_label"] or "Text encoder / LLM path"),
+            gr.update(visible=info["te2_label"] is not None),
+            gr.update(label=info["te2_label"] or "Secondary text encoder"),
+            gr.update(visible=info["adapter_label"] is not None),
+            gr.update(label=info["adapter_label"] or "Adapter / extra path"),
             gr.update(visible=info["show_shift"], value=info["shift_default"]),
             gr.update(visible=info["show_flux_shift"]),
             gr.update(visible=info["show_max_seq"], value=info["max_seq_default"]),
@@ -1680,43 +1722,61 @@ def build_ui():
                 )
 
             with gr.Row():
-                ui_dataset = gr.Textbox(
-                    label="Dataset folder",
-                    placeholder='Example: "C:\\AI\\datasets\\my_dataset"',
-                )
-                ui_output = gr.Textbox(
-                    label="Output folder",
-                    placeholder="Blank = training_runs/<model>/<run_name>",
-                )
-
-            ui_main_model = gr.Textbox(
-                label=MODEL_UI["krea2"]["main_label"],
-                placeholder="Path to main model file or folder",
-            )
-
-            with gr.Row():
-                ui_vae = gr.Textbox(
-                    label=MODEL_UI["krea2"]["vae_label"] or "VAE path",
-                    placeholder="VAE .safetensors",
-                    visible=MODEL_UI["krea2"]["vae_label"] is not None,
-                )
-                ui_te = gr.Textbox(
-                    label=MODEL_UI["krea2"]["te_label"] or "Text encoder / LLM path",
-                    placeholder="Text encoder .safetensors or folder",
-                    visible=MODEL_UI["krea2"]["te_label"] is not None,
-                )
+                with gr.Column():
+                    with gr.Row():
+                        ui_dataset = gr.Textbox(
+                            label="Dataset folder",
+                            placeholder='Example: "C:\\AI\\datasets\\my_dataset"',
+                        )
+                        btn_dataset = gr.Button("📁", scale=0, min_width=42, variant="secondary")
+                with gr.Column():
+                    with gr.Row():
+                        ui_output = gr.Textbox(
+                            label="Output folder",
+                            placeholder="Blank = training_runs/<model>/<run_name>",
+                        )
+                        btn_output = gr.Button("📁", scale=0, min_width=42, variant="secondary")
 
             with gr.Row():
-                ui_te2 = gr.Textbox(
-                    label="Secondary text encoder",
-                    placeholder="Second TE path (byt5 / clip / etc)",
-                    visible=MODEL_UI["krea2"]["te2_label"] is not None,
+                ui_main_model = gr.Textbox(
+                    label=MODEL_UI["krea2"]["main_label"],
+                    placeholder="Path to main model file or folder",
                 )
-                ui_adapter = gr.Textbox(
-                    label=MODEL_UI["krea2"]["adapter_label"] or "Adapter / extra path",
-                    placeholder="Optional path",
-                    visible=MODEL_UI["krea2"]["adapter_label"] is not None,
-                )
+                btn_main_folder = gr.Button("📁", scale=0, min_width=42, variant="secondary")
+                btn_main_file   = gr.Button("📄", scale=0, min_width=42, variant="secondary")
+
+            with gr.Row():
+                with gr.Column(visible=MODEL_UI["krea2"]["vae_label"] is not None) as ui_vae_col:
+                    with gr.Row():
+                        ui_vae = gr.Textbox(
+                            label=MODEL_UI["krea2"]["vae_label"] or "VAE path",
+                            placeholder="VAE .safetensors",
+                        )
+                        btn_vae = gr.Button("📄", scale=0, min_width=42, variant="secondary")
+                with gr.Column(visible=MODEL_UI["krea2"]["te_label"] is not None) as ui_te_col:
+                    with gr.Row():
+                        ui_te = gr.Textbox(
+                            label=MODEL_UI["krea2"]["te_label"] or "Text encoder / LLM path",
+                            placeholder="Text encoder .safetensors or folder",
+                        )
+                        btn_te_folder = gr.Button("📁", scale=0, min_width=42, variant="secondary")
+                        btn_te_file   = gr.Button("📄", scale=0, min_width=42, variant="secondary")
+
+            with gr.Row():
+                with gr.Column(visible=MODEL_UI["krea2"]["te2_label"] is not None) as ui_te2_col:
+                    with gr.Row():
+                        ui_te2 = gr.Textbox(
+                            label="Secondary text encoder",
+                            placeholder="Second TE path (byt5 / clip / etc)",
+                        )
+                        btn_te2 = gr.Button("📄", scale=0, min_width=42, variant="secondary")
+                with gr.Column(visible=MODEL_UI["krea2"]["adapter_label"] is not None) as ui_adapter_col:
+                    with gr.Row():
+                        ui_adapter = gr.Textbox(
+                            label=MODEL_UI["krea2"]["adapter_label"] or "Adapter / extra path",
+                            placeholder="Optional path",
+                        )
+                        btn_adapter = gr.Button("📄", scale=0, min_width=42, variant="secondary")
 
             ui_model_notes = gr.Markdown(
                 value=f"ℹ️ **{MODEL_UI['krea2']['notes']}**"
@@ -1839,10 +1899,10 @@ def build_ui():
 
         dynamic_outputs = [
             ui_main_model,
-            ui_vae,
-            ui_te,
-            ui_te2,
-            ui_adapter,
+            ui_vae_col, ui_vae,
+            ui_te_col,  ui_te,
+            ui_te2_col, ui_te2,
+            ui_adapter_col, ui_adapter,
             ui_shift,
             ui_flux_shift,
             ui_max_seq,
@@ -1859,7 +1919,12 @@ def build_ui():
         _load_outputs = [
             status, ui_accordion,
             ui_model, ui_run_name, ui_trigger, ui_dataset, ui_output,
-            ui_main_model, ui_vae, ui_te, ui_te2, ui_adapter, ui_model_notes,
+            ui_main_model,
+            ui_vae_col, ui_vae,
+            ui_te_col,  ui_te,
+            ui_te2_col, ui_te2,
+            ui_adapter_col, ui_adapter,
+            ui_model_notes,
             ui_resolution, ui_min_ar, ui_max_ar, ui_ar_buckets, ui_repeats,
             ui_rank, ui_lr, ui_max_steps, ui_save_every,
             ui_batch, ui_grad_accum, ui_blocks, ui_cache_batch,
@@ -1868,6 +1933,27 @@ def build_ui():
             ui_llm_lr, ui_sdxl_lr_row, ui_unet_lr, ui_te1_lr, ui_te2_lr,
         ]
         load_btn.click(load_config_to_ui, inputs=config, outputs=_load_outputs)
+
+        # --- path browse buttons ---
+        btn_dataset.click(browse_folder,  inputs=ui_dataset, outputs=ui_dataset)
+        btn_output.click( browse_folder,  inputs=ui_output,  outputs=ui_output)
+        btn_main_folder.click(browse_folder, inputs=ui_main_model, outputs=ui_main_model)
+        btn_main_file.click(
+            lambda x: browse_file(x, _SF_GGUF), inputs=ui_main_model, outputs=ui_main_model
+        )
+        btn_vae.click(
+            lambda x: browse_file(x, _SF),       inputs=ui_vae,  outputs=ui_vae
+        )
+        btn_te_folder.click(browse_folder,        inputs=ui_te,   outputs=ui_te)
+        btn_te_file.click(
+            lambda x: browse_file(x, _SF_GGUF),  inputs=ui_te,   outputs=ui_te
+        )
+        btn_te2.click(
+            lambda x: browse_file(x, _SF),        inputs=ui_te2,  outputs=ui_te2
+        )
+        btn_adapter.click(
+            lambda x: browse_file(x, _SF),        inputs=ui_adapter, outputs=ui_adapter
+        )
 
         _preset_outputs = [
             status, ui_resolution, ui_rank, ui_lr,
