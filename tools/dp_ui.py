@@ -1027,16 +1027,21 @@ def generate_config_from_ui(
     min_t: float,
     max_t: float,
 ):
+    import gradio as gr
+
+    def _cfg_update():
+        return gr.update(choices=list_configs())
+
     if not run_name.strip():
-        return "Run name is required.", list_configs()
+        return "Run name is required.", _cfg_update()
     if not dataset_path.strip():
-        return "Dataset path is required.", list_configs()
+        return "Dataset path is required.", _cfg_update()
     if not main_model_path.strip():
-        return "Main model path/folder is required.", list_configs()
+        return "Main model path/folder is required.", _cfg_update()
 
     dataset = Path(win_to_wsl(dataset_path))
     if not dataset.is_dir():
-        return f"Dataset folder not found: {dataset}", list_configs()
+        return f"Dataset folder not found: {dataset}", _cfg_update()
 
     model_key, model_text = ui_model_block(
         model_label, main_model_path, vae_path, text_encoder_path, text_encoder_2_path,
@@ -1130,7 +1135,7 @@ wandb_run_name = {quote_toml(run_name)}
         f"  dataset: {dataset_config}\n"
         f"  train:   {train_config}\n"
         "Select it from Config, or click Refresh configs.",
-        list_configs(),
+        gr.update(choices=list_configs()),
     )
 
 
@@ -1364,7 +1369,8 @@ def saved_checkpoints(choice: str) -> str:
 
 
 def refresh_configs():
-    return list_configs()
+    import gradio as gr
+    return gr.update(choices=list_configs())
 
 
 def build_ui():
