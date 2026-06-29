@@ -13,15 +13,334 @@ CONFIG_ROOT = REPO_DIR / "configs" / "generated"
 RUN_ROOT = REPO_DIR / "training_runs"
 LOG_ROOT = REPO_DIR / "ui_logs"
 TRAIN_PID_FILE = LOG_ROOT / "current_train.pid"
+
 MODEL_LABELS = {
-    "Krea 2": "krea2",
-    "Z-Image": "z_image",
+    # Flux family
+    "Flux Dev": "flux",
+    "Flux Kontext": "flux_kontext",
+    "Flux 2 Dev": "flux2_dev",
+    "Flux 2 Klein 4B": "flux2_klein4b",
     "Flux 2 Klein 9B": "flux2_klein9b",
+    "Chroma": "chroma",
+    # Qwen / Z-Image family
+    "Qwen-Image": "qwen_image",
+    "Qwen-Image-Edit": "qwen_image_edit",
+    "Z-Image": "z_image",
+    # Hunyuan family
+    "HunyuanImage-2.1": "hunyuan_image",
+    "HunyuanVideo": "hunyuan_video",
+    "HunyuanVideo-1.5": "hunyuan_video_15",
+    "HiDream": "hidream",
+    # LTX family
+    "LTX-Video": "ltx_video",
     "LTX 2.3": "ltx2",
+    # Wan family
+    "Wan2.1": "wan21",
+    "Wan2.2 (Low Noise)": "wan22_low",
+    "Wan2.2 (High Noise)": "wan22_high",
+    # Others
+    "Lumina Image 2.0": "lumina_2",
+    "Cosmos": "cosmos",
+    "Cosmos-Predict2": "cosmos_predict2",
+    "OmniGen2": "omnigen2",
+    "Ideogram4": "ideogram4",
+    "Ernie-Image": "ernie_image",
     "Anima": "anima",
-    "Stable Diffusion 3": "sd3",
-    "SDXL": "sdxl",
+    "Krea 2": "krea2",
     "AuraFlow": "auraflow",
+    "SD3": "sd3",
+    "SDXL": "sdxl",
+}
+
+# UI metadata per model key:
+# main_label, vae_label (None=hidden), te_label (None=hidden), te2_label (None=hidden)
+# adapter_label (None=hidden), show_shift (numeric), show_flux_shift (checkbox)
+# show_max_seq, show_hidream_4bit, show_min_max_t, show_llm_lr, show_sdxl_lr
+# shift_default, min_t_default, max_t_default, max_seq_default, notes
+MODEL_UI = {
+    "flux": dict(
+        main_label="Diffusers folder (FLUX.1-dev or Schnell)",
+        vae_label=None, te_label=None, te2_label=None,
+        adapter_label="Transformer .safetensors (optional override)",
+        show_shift=False, show_flux_shift=True, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="VAE and text encoders are loaded from the Diffusers folder. LoRA saved in Diffusers format.",
+    ),
+    "flux_kontext": dict(
+        main_label="Diffusers folder (FLUX.1-dev)",
+        vae_label=None, te_label=None, te2_label=None,
+        adapter_label="Kontext transformer .safetensors (flux1-kontext-dev)",
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Compatible with Flux Dev weights. Set dataset like Flux Kontext example. LoRA saved in Diffusers format.",
+    ),
+    "flux2_dev": dict(
+        main_label="diffusion_model .safetensors (flux2-dev)",
+        vae_label="VAE .safetensors (flux2-vae)",
+        te_label="Text encoder .safetensors (mistral_3_small_flux2_fp8)",
+        te2_label=None, adapter_label=None,
+        show_shift=True, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=3, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="shift=3 recommended. Use ComfyUI-compatible weights. LoRA saved in ComfyUI format.",
+    ),
+    "flux2_klein4b": dict(
+        main_label="diffusion_model .safetensors (flux-2-klein-base-4b)",
+        vae_label="VAE .safetensors (flux2-vae)",
+        te_label="Text encoder .safetensors (qwen_3_4b)",
+        te2_label=None, adapter_label=None,
+        show_shift=True, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=3, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Use the BASE model (not distilled). shift=3 default. LoRA saved in ComfyUI format.",
+    ),
+    "flux2_klein9b": dict(
+        main_label="diffusion_model .safetensors (flux-2-klein-base-9b)",
+        vae_label="VAE .safetensors (flux2-vae)",
+        te_label="Text encoder .safetensors (qwen_3_8b)",
+        te2_label=None, adapter_label=None,
+        show_shift=True, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=3, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Use the BASE model (not distilled). shift=3 default. LoRA saved in ComfyUI format.",
+    ),
+    "chroma": dict(
+        main_label="Diffusers folder (FLUX.1-dev or Schnell)",
+        vae_label=None, te_label=None, te2_label=None,
+        adapter_label="Chroma transformer .safetensors (required, e.g. chroma-unlocked-v10)",
+        show_shift=False, show_flux_shift=True, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Diffusers folder provides VAE and text encoder. Chroma transformer is the single file. LoRA in ComfyUI format.",
+    ),
+    "qwen_image": dict(
+        main_label="Diffusers folder (Qwen-Image)  — or transformer .safetensors for individual files",
+        vae_label="VAE path (Diffusers VAE, only needed with individual files)",
+        te_label="Text encoder .safetensors (qwen_2.5_vl_7b, only needed with individual files)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Can use Diffusers folder only (leave VAE/TE blank), or specify individual ComfyUI files. LoRA in ComfyUI format.",
+    ),
+    "qwen_image_edit": dict(
+        main_label="Diffusers folder (Qwen-Image or Qwen-Image-Edit)",
+        vae_label=None, te_label=None, te2_label=None,
+        adapter_label="Qwen-Image-Edit transformer .safetensors (if using Qwen-Image Diffusers folder)",
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Configure dataset like Flux Kontext example. Reference images must match target aspect ratio. LoRA in ComfyUI format.",
+    ),
+    "z_image": dict(
+        main_label="diffusion_model .safetensors (z_image_turbo_bf16)",
+        vae_label="VAE .safetensors (flux_vae)",
+        te_label="Text encoder .safetensors (qwen_3_4b)",
+        te2_label=None,
+        adapter_label="Turbo training adapter .safetensors (required for Z-Image-Turbo)",
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="All ComfyUI format files from Comfy-Org/z_image_turbo. For Turbo, include the training adapter. LoRA in ComfyUI format.",
+    ),
+    "hunyuan_image": dict(
+        main_label="transformer .safetensors (hunyuanimage2.1)",
+        vae_label="VAE .safetensors (hunyuan_image_2.1_vae_fp16)",
+        te_label="Text encoder .safetensors (qwen_2.5_vl_7b)",
+        te2_label="byt5 .safetensors (byt5_small_glyphxl_fp16)",
+        adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Note: 1024 res here ≈ 512 for Flux/Qwen. All ComfyUI format files. LoRA in ComfyUI format.",
+    ),
+    "hunyuan_video": dict(
+        main_label="transformer .safetensors (hunyuan_video_720_cfgdistill_fp8)",
+        vae_label="VAE .safetensors (hunyuan_video_vae_bf16)",
+        te_label="LLM folder (llava-llama-3-8b-text-encoder-tokenizer)",
+        te2_label="CLIP folder (clip-vit-large-patch14)",
+        adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Load from ComfyUI files. LoRA saved in Diffusers-style format, compatible with ComfyUI.",
+    ),
+    "hunyuan_video_15": dict(
+        main_label="diffusion_model .safetensors (hunyuanvideo1.5_480p_t2v_fp16)",
+        vae_label="VAE .safetensors (hunyuanvideo15_vae_fp16)",
+        te_label="Text encoder 1 .safetensors (qwen_2.5_vl_7b)",
+        te2_label="Text encoder 2 .safetensors (byt5_small_glyphxl_fp16)",
+        adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="All ComfyUI format files. LoRA saved in ComfyUI format.",
+    ),
+    "hidream": dict(
+        main_label="Diffusers folder (HiDream-I1-Full)",
+        vae_label=None,
+        te_label="Llama3 path (Meta-Llama-3.1-8B-Instruct folder)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=True, show_max_seq=True,
+        show_hidream_4bit=True, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=128,
+        notes="Only Full version supported (not Dev/Fast). 4-bit Llama3 saves VRAM with no measurable quality loss. LoRA in ComfyUI format.",
+    ),
+    "ltx_video": dict(
+        main_label="Diffusers folder (LTX-Video)",
+        vae_label=None, te_label=None, te2_label=None,
+        adapter_label="single_file_path .safetensors (optional, for newer LTX versions like v0.9.1)",
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Diffusers folder still needed for text encoder. LoRA saved in ComfyUI format.",
+    ),
+    "ltx2": dict(
+        main_label="diffusion_model .safetensors (ltx-2.3-22b-dev)",
+        vae_label=None,
+        te_label="text_encoder .safetensors (gemma_3_12B_it_fp4_mixed)",
+        te2_label=None, adapter_label=None,
+        show_shift=True, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Only LTX 2.3 supported. Max blocks_to_swap=46. 24GB tight — use low resolution and rank. LoRA in ComfyUI format.",
+    ),
+    "wan21": dict(
+        main_label="ckpt_path (Wan2.1-T2V-1.3B or 14B folder)",
+        vae_label="Optional: transformer .safetensors override (ComfyUI repackaged)",
+        te_label="Optional: LLM .safetensors override (umt5-xxl-enc-bf16)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Set ckpt_path to HuggingFace checkpoint folder. VAE/TE fields are optional ComfyUI overrides. LoRA in ComfyUI format.",
+    ),
+    "wan22_low": dict(
+        main_label="ckpt_path (Wan2.2-T2V-A14B folder)",
+        vae_label="Optional: transformer .safetensors (wan2.2_t2v_low_noise_14B_fp16)",
+        te_label="Optional: LLM .safetensors (umt5_xxl_fp16)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=True, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=0.875, max_seq_default=256,
+        notes="Low noise model handles timesteps 0→0.875. Use min_t=0, max_t=0.875 for T2V. LoRA in ComfyUI format.",
+    ),
+    "wan22_high": dict(
+        main_label="ckpt_path (Wan2.2-T2V-A14B folder)",
+        vae_label="Optional: transformer .safetensors (wan2.2_t2v_high_noise_14B_fp16)",
+        te_label="Optional: LLM .safetensors (umt5_xxl_fp16)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=True, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.875, max_t_default=1.0, max_seq_default=256,
+        notes="High noise model handles timesteps 0.875→1.0. Use min_t=0.875, max_t=1.0 for T2V. LoRA in ComfyUI format.",
+    ),
+    "lumina_2": dict(
+        main_label="transformer .safetensors (lumina_2_model_bf16)",
+        vae_label="VAE .safetensors (flux_vae)",
+        te_label="LLM .safetensors (gemma_2_2b_fp16)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="lumina_shift=true added automatically. Supports FFT at 1024px on a single 24GB GPU. LoRA in ComfyUI format.",
+    ),
+    "cosmos": dict(
+        main_label="transformer_path .pt (cosmos-1.0-diffusion-7b-text2world)",
+        vae_label="VAE .safetensors (cosmos_cv8x8x8_1.0)",
+        te_label="text_encoder .safetensors (oldt5_xxl_fp16)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Tentative support. Very high VRAM requirements. Not actively maintained. LoRA in ComfyUI format.",
+    ),
+    "cosmos_predict2": dict(
+        main_label="transformer_path .pt (Cosmos-Predict2-*/model.pt)",
+        vae_label="VAE .safetensors (wan_2.1_vae — Wan VAE!)",
+        te_label="T5 .safetensors (oldt5_xxl_fp16 — older T5, not standard!)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="If using fp8, use float8_e5m2 (NOT e4m3fn). T5 must be the older oldt5_xxl version. LoRA in ComfyUI format.",
+    ),
+    "omnigen2": dict(
+        main_label="Diffusers folder (OmniGen2)",
+        vae_label=None, te_label=None, te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=True, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Only t2i (single image + caption) training supported. LoRA in ComfyUI format.",
+    ),
+    "ideogram4": dict(
+        main_label="diffusion_model .safetensors (ideogram4_fp8_scaled)",
+        vae_label="VAE .safetensors (flux2-vae)",
+        te_label="text_encoder .safetensors (qwen3vl_8b_fp8_scaled)",
+        te2_label=None, adapter_label=None,
+        show_shift=True, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=3, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="shift=3 default. 24GB VRAM sufficient for LoRA. LoRA saved in ComfyUI format.",
+    ),
+    "ernie_image": dict(
+        main_label="diffusion_model .safetensors (ernie-image)",
+        vae_label="VAE .safetensors (flux2-vae)",
+        te_label="text_encoder .safetensors (ministral-3-3b)",
+        te2_label=None, adapter_label=None,
+        show_shift=True, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=3, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="shift=3 default. Use ComfyUI-compatible files. LoRA saved in ComfyUI format.",
+    ),
+    "anima": dict(
+        main_label="transformer_path .safetensors (anima-preview)",
+        vae_label="VAE .safetensors (qwen_image_vae)",
+        te_label="LLM .safetensors (qwen_3_06b_base)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=True, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Official ComfyUI format files. llm_adapter_lr=0 is safer for small datasets. LoRA in ComfyUI format.",
+    ),
+    "krea2": dict(
+        main_label="diffusion_model .safetensors (krea2_raw)",
+        vae_label="VAE .safetensors (qwen_image_vae)",
+        te_label="text_encoder .safetensors (qwen3vl_4b_bf16)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Rank 32 LoRA at 512 res fits in 24GB VRAM. Use ComfyUI files. LoRA in ComfyUI format.",
+    ),
+    "auraflow": dict(
+        main_label="transformer .safetensors (pony-v7-base or auraflow base)",
+        vae_label="VAE .safetensors (sdxl_vae)",
+        te_label="text_encoder .safetensors (umt5_auraflow.fp16)",
+        te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=True,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=768,
+        notes="max_sequence_length=768 for Pony-V7, 256 for base AuraFlow. LoRA in Diffusers format (works in ComfyUI).",
+    ),
+    "sd3": dict(
+        main_label="Diffusers folder (stable-diffusion-3.5-medium or large)",
+        vae_label=None, te_label=None, te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=True, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=False,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Tested on SD3.5 Medium and Large. LoRA saved in Diffusers format (works in ComfyUI).",
+    ),
+    "sdxl": dict(
+        main_label="checkpoint .safetensors (sd_xl_base_1.0)",
+        vae_label=None, te_label=None, te2_label=None, adapter_label=None,
+        show_shift=False, show_flux_shift=False, show_max_seq=False,
+        show_hidream_4bit=False, show_min_max_t=False, show_llm_lr=False, show_sdxl_lr=True,
+        shift_default=1, min_t_default=0.0, max_t_default=1.0, max_seq_default=256,
+        notes="Text encoders are trained (not cached). LoRA in Kohya sd-scripts format. FFT needs 48GB VRAM.",
+    ),
 }
 
 TRAIN_PROC: subprocess.Popen | None = None
@@ -189,54 +508,57 @@ def launch_aitk_converter(config_yaml: str) -> str:
     return launch_windows_bat("AITK_to_diffusion_pipe.bat")
 
 
+def _get_model_key(model_label: str) -> str:
+    return MODEL_LABELS.get(model_label, "krea2")
+
+
 def ui_model_block(
     model_label: str,
     main_path: str,
     vae_path: str,
     text_encoder_path: str,
+    text_encoder_2_path: str,
     adapter_path: str,
     use_float8: bool,
+    flux_shift: bool,
     shift: int,
     max_sequence_length: int,
     llm_adapter_lr: str,
     unet_lr: str,
     text_encoder_1_lr: str,
     text_encoder_2_lr: str,
+    hidream_4bit: bool,
+    min_t: float,
+    max_t: float,
 ) -> tuple[str, str]:
-    model_key = MODEL_LABELS.get(model_label, "krea2")
+    model_key = _get_model_key(model_label)
     main = win_to_wsl(main_path)
     vae = win_to_wsl(vae_path)
     te = win_to_wsl(text_encoder_path)
+    te2 = win_to_wsl(text_encoder_2_path)
     adapter = win_to_wsl(adapter_path)
-    float8_line = "diffusion_model_dtype = 'float8'\n" if use_float8 else ""
-    transformer_float8 = "transformer_dtype = 'float8'\n" if use_float8 else ""
+    float8_dm = "diffusion_model_dtype = 'float8'\n" if use_float8 else ""
+    float8_tr = "transformer_dtype = 'float8'\n" if use_float8 else ""
 
-    if model_key == "krea2":
-        return model_key, f"""[model]
-type = 'krea2'
-diffusion_model = {quote_toml(main)}
-vae = {quote_toml(vae)}
-text_encoders = [
-    {{path = {quote_toml(te)}, type = 'krea2'}}
-]
-dtype = 'bfloat16'
-{float8_line}timestep_sample_method = 'logit_normal'
-"""
+    if model_key == "flux":
+        tr_line = f"transformer_path = {quote_toml(adapter)}\n" if adapter else ""
+        fs_line = "flux_shift = true\n" if flux_shift else ""
+        return "flux", f"""[model]
+type = 'flux'
+diffusers_path = {quote_toml(main)}
+{tr_line}dtype = 'bfloat16'
+{float8_tr}{fs_line}"""
 
-    if model_key == "z_image":
-        merge = f"merge_adapters = [{quote_toml(adapter)}]\n" if adapter_path.strip() else ""
-        return model_key, f"""[model]
-type = 'z_image'
-diffusion_model = {quote_toml(main)}
-vae = {quote_toml(vae)}
-text_encoders = [
-    {{path = {quote_toml(te)}, type = 'lumina2'}}
-]
-{merge}dtype = 'bfloat16'
-{float8_line}"""
+    if model_key == "flux_kontext":
+        tr_line = f"transformer_path = {quote_toml(adapter)}\n" if adapter else ""
+        return "flux_kontext", f"""[model]
+type = 'flux'
+diffusers_path = {quote_toml(main)}
+{tr_line}dtype = 'bfloat16'
+{float8_tr}"""
 
-    if model_key == "flux2_klein9b":
-        return model_key, f"""[model]
+    if model_key in ("flux2_dev", "flux2_klein4b", "flux2_klein9b"):
+        return "flux2", f"""[model]
 type = 'flux2'
 diffusion_model = {quote_toml(main)}
 vae = {quote_toml(vae)}
@@ -244,22 +566,202 @@ text_encoders = [
     {{path = {quote_toml(te)}, type = 'flux2'}}
 ]
 dtype = 'bfloat16'
-{float8_line}timestep_sample_method = 'logit_normal'
-shift = {shift}
+{float8_dm}timestep_sample_method = 'logit_normal'
+shift = {int(shift)}
+"""
+
+    if model_key == "chroma":
+        tr_line = f"transformer_path = {quote_toml(adapter)}\n" if adapter else ""
+        fs_line = "flux_shift = true\n" if flux_shift else ""
+        return "chroma", f"""[model]
+type = 'chroma'
+diffusers_path = {quote_toml(main)}
+{tr_line}dtype = 'bfloat16'
+{float8_tr}{fs_line}"""
+
+    if model_key == "qwen_image":
+        if not te and not vae:
+            return "qwen_image", f"""[model]
+type = 'qwen_image'
+diffusers_path = {quote_toml(main)}
+dtype = 'bfloat16'
+{float8_tr}timestep_sample_method = 'logit_normal'
+"""
+        vae_line = f"vae_path = {quote_toml(vae)}\n" if vae else ""
+        te_line = f"text_encoder_path = {quote_toml(te)}\n" if te else ""
+        return "qwen_image", f"""[model]
+type = 'qwen_image'
+transformer_path = {quote_toml(main)}
+{te_line}{vae_line}dtype = 'bfloat16'
+{float8_tr}timestep_sample_method = 'logit_normal'
+"""
+
+    if model_key == "qwen_image_edit":
+        tr_line = f"transformer_path = {quote_toml(adapter)}\n" if adapter else ""
+        return "qwen_image_edit", f"""[model]
+type = 'qwen_image'
+diffusers_path = {quote_toml(main)}
+{tr_line}dtype = 'bfloat16'
+{float8_tr}timestep_sample_method = 'logit_normal'
+"""
+
+    if model_key == "z_image":
+        merge = f"merge_adapters = [{quote_toml(adapter)}]\n" if adapter else ""
+        return "z_image", f"""[model]
+type = 'z_image'
+diffusion_model = {quote_toml(main)}
+vae = {quote_toml(vae)}
+text_encoders = [
+    {{path = {quote_toml(te)}, type = 'lumina2'}}
+]
+{merge}dtype = 'bfloat16'
+{float8_dm}"""
+
+    if model_key == "hunyuan_image":
+        return "hunyuan_image", f"""[model]
+type = 'hunyuan_image'
+transformer_path = {quote_toml(main)}
+vae_path = {quote_toml(vae)}
+text_encoder_path = {quote_toml(te)}
+byt5_path = {quote_toml(te2)}
+dtype = 'bfloat16'
+{float8_tr}"""
+
+    if model_key == "hunyuan_video":
+        return "hunyuan_video", f"""[model]
+type = 'hunyuan-video'
+transformer_path = {quote_toml(main)}
+vae_path = {quote_toml(vae)}
+llm_path = {quote_toml(te)}
+clip_path = {quote_toml(te2)}
+dtype = 'bfloat16'
+{float8_tr}timestep_sample_method = 'logit_normal'
+"""
+
+    if model_key == "hunyuan_video_15":
+        return "hunyuan_video_15", f"""[model]
+type = 'hunyuan_video_15'
+diffusion_model = {quote_toml(main)}
+vae = {quote_toml(vae)}
+text_encoders = [
+    {{paths = [
+        {quote_toml(te)},
+        {quote_toml(te2)},
+    ], type = 'hunyuan_video_15'}},
+]
+dtype = 'bfloat16'
+{float8_dm}timestep_sample_method = 'logit_normal'
+"""
+
+    if model_key == "hidream":
+        bit4_line = "llama3_4bit = true\n" if hidream_4bit else ""
+        fs_line = "flux_shift = true\n" if flux_shift else ""
+        return "hidream", f"""[model]
+type = 'hidream'
+diffusers_path = {quote_toml(main)}
+llama3_path = {quote_toml(te)}
+{bit4_line}dtype = 'bfloat16'
+{float8_tr}max_llama3_sequence_length = {int(max_sequence_length)}
+{fs_line}"""
+
+    if model_key == "ltx_video":
+        sf_line = f"single_file_path = {quote_toml(adapter)}\n" if adapter else ""
+        return "ltx_video", f"""[model]
+type = 'ltx-video'
+diffusers_path = {quote_toml(main)}
+{sf_line}dtype = 'bfloat16'
+{float8_tr}timestep_sample_method = 'logit_normal'
 """
 
     if model_key == "ltx2":
-        return model_key, f"""[model]
+        return "ltx2", f"""[model]
 type = 'ltx2'
 diffusion_model = {quote_toml(main)}
 text_encoder = {quote_toml(te)}
 dtype = 'bfloat16'
-{float8_line}timestep_sample_method = 'logit_normal'
-shift = {shift}
+{float8_dm}timestep_sample_method = 'logit_normal'
+shift = {int(shift)}
+"""
+
+    if model_key in ("wan21", "wan22_low", "wan22_high"):
+        tr_line = f"transformer_path = {quote_toml(vae)}\n" if vae else ""
+        llm_line = f"llm_path = {quote_toml(te)}\n" if te else ""
+        float8_wan = "transformer_dtype = 'float8'\n" if use_float8 else ""
+        t_range = ""
+        if model_key in ("wan22_low", "wan22_high"):
+            t_range = f"min_t = {float(min_t)}\nmax_t = {float(max_t)}\n"
+        folder = "wan21" if model_key == "wan21" else "wan22"
+        return folder, f"""[model]
+type = 'wan'
+ckpt_path = {quote_toml(main)}
+{tr_line}{llm_line}dtype = 'bfloat16'
+{float8_wan}timestep_sample_method = 'logit_normal'
+{t_range}"""
+
+    if model_key == "lumina_2":
+        return "lumina_2", f"""[model]
+type = 'lumina_2'
+transformer_path = {quote_toml(main)}
+llm_path = {quote_toml(te)}
+vae_path = {quote_toml(vae)}
+dtype = 'bfloat16'
+lumina_shift = true
+"""
+
+    if model_key == "cosmos":
+        return "cosmos", f"""[model]
+type = 'cosmos'
+transformer_path = {quote_toml(main)}
+vae_path = {quote_toml(vae)}
+text_encoder_path = {quote_toml(te)}
+dtype = 'bfloat16'
+"""
+
+    if model_key == "cosmos_predict2":
+        return "cosmos_predict2", f"""[model]
+type = 'cosmos_predict2'
+transformer_path = {quote_toml(main)}
+vae_path = {quote_toml(vae)}
+t5_path = {quote_toml(te)}
+dtype = 'bfloat16'
+{float8_tr}"""
+
+    if model_key == "omnigen2":
+        fs_line = "flux_shift = true\n" if flux_shift else ""
+        return "omnigen2", f"""[model]
+type = 'omnigen2'
+diffusers_path = {quote_toml(main)}
+dtype = 'bfloat16'
+{fs_line}"""
+
+    if model_key == "ideogram4":
+        return "ideogram4", f"""[model]
+type = 'ideogram4'
+diffusion_model = {quote_toml(main)}
+vae = {quote_toml(vae)}
+text_encoders = [
+    {{path = {quote_toml(te)}, type = 'ideogram4'}}
+]
+dtype = 'bfloat16'
+{float8_dm}timestep_sample_method = 'logit_normal'
+shift = {int(shift)}
+"""
+
+    if model_key == "ernie_image":
+        return "ernie_image", f"""[model]
+type = 'ernie_image'
+diffusion_model = {quote_toml(main)}
+vae = {quote_toml(vae)}
+text_encoders = [
+    {{path = {quote_toml(te)}, type = 'flux2'}}
+]
+dtype = 'bfloat16'
+{float8_dm}timestep_sample_method = 'logit_normal'
+shift = {int(shift)}
 """
 
     if model_key == "anima":
-        return model_key, f"""[model]
+        return "anima", f"""[model]
 type = 'anima'
 transformer_path = {quote_toml(main)}
 vae_path = {quote_toml(vae)}
@@ -268,32 +770,45 @@ dtype = 'bfloat16'
 llm_adapter_lr = {llm_adapter_lr or "0"}
 """
 
+    if model_key == "krea2":
+        return "krea2", f"""[model]
+type = 'krea2'
+diffusion_model = {quote_toml(main)}
+vae = {quote_toml(vae)}
+text_encoders = [
+    {{path = {quote_toml(te)}, type = 'krea2'}}
+]
+dtype = 'bfloat16'
+{float8_dm}timestep_sample_method = 'logit_normal'
+"""
+
+    if model_key == "auraflow":
+        return "auraflow", f"""[model]
+type = 'auraflow'
+transformer_path = {quote_toml(main)}
+text_encoder_path = {quote_toml(te)}
+vae_path = {quote_toml(vae)}
+dtype = 'bfloat16'
+{float8_tr}timestep_sample_method = 'logit_normal'
+max_sequence_length = {int(max_sequence_length)}
+"""
+
     if model_key == "sd3":
-        return model_key, f"""[model]
+        fs_line = "flux_shift = true\n" if flux_shift else ""
+        return "sd3", f"""[model]
 type = 'sd3'
 diffusers_path = {quote_toml(main)}
 dtype = 'bfloat16'
-{transformer_float8}"""
+{float8_tr}{fs_line}"""
 
     if model_key == "sdxl":
-        return model_key, f"""[model]
+        return "sdxl", f"""[model]
 type = 'sdxl'
 checkpoint_path = {quote_toml(main)}
 dtype = 'bfloat16'
 unet_lr = {unet_lr or "4e-5"}
 text_encoder_1_lr = {text_encoder_1_lr or "2e-5"}
 text_encoder_2_lr = {text_encoder_2_lr or "2e-5"}
-"""
-
-    if model_key == "auraflow":
-        return model_key, f"""[model]
-type = 'auraflow'
-transformer_path = {quote_toml(main)}
-text_encoder_path = {quote_toml(te)}
-vae_path = {quote_toml(vae)}
-dtype = 'bfloat16'
-{transformer_float8}timestep_sample_method = 'logit_normal'
-max_sequence_length = {max_sequence_length}
 """
 
     raise ValueError(f"Unsupported model: {model_label}")
@@ -308,6 +823,7 @@ def generate_config_from_ui(
     main_model_path: str,
     vae_path: str,
     text_encoder_path: str,
+    text_encoder_2_path: str,
     adapter_path: str,
     resolution: int,
     min_ar: float,
@@ -324,12 +840,16 @@ def generate_config_from_ui(
     cache_batch: int,
     optimizer: str,
     use_float8: bool,
+    flux_shift: bool,
     shift: int,
     max_sequence_length: int,
     llm_adapter_lr: str,
     unet_lr: str,
     text_encoder_1_lr: str,
     text_encoder_2_lr: str,
+    hidream_4bit: bool,
+    min_t: float,
+    max_t: float,
 ):
     if not run_name.strip():
         return "Run name is required.", list_configs()
@@ -343,18 +863,10 @@ def generate_config_from_ui(
         return f"Dataset folder not found: {dataset}", list_configs()
 
     model_key, model_text = ui_model_block(
-        model_label,
-        main_model_path,
-        vae_path,
-        text_encoder_path,
-        adapter_path,
-        use_float8,
-        int(shift),
-        int(max_sequence_length),
-        llm_adapter_lr,
-        unet_lr,
-        text_encoder_1_lr,
-        text_encoder_2_lr,
+        model_label, main_model_path, vae_path, text_encoder_path, text_encoder_2_path,
+        adapter_path, use_float8, flux_shift, int(shift), int(max_sequence_length),
+        llm_adapter_lr, unet_lr, text_encoder_1_lr, text_encoder_2_lr,
+        hidream_4bit, float(min_t), float(max_t),
     )
 
     output_dir = win_to_wsl(output_folder.strip() or f"{RUN_ROOT.as_posix()}/{model_key}/{run_name}")
@@ -527,9 +1039,13 @@ def tensorboard_frame(port: str) -> str:
     )
 
 
+def tb_alive() -> bool:
+    return TB_PROC is not None and TB_PROC.poll() is None
+
+
 def start_tensorboard(logdir: str, port: str) -> tuple[str, str]:
     global TB_PROC, TB_LOG
-    if process_alive(TB_PROC):
+    if tb_alive():
         port = port if (port or "").isdigit() else "6006"
         return f"TensorBoard is already running: http://localhost:{port}", tensorboard_frame(port)
 
@@ -553,7 +1069,16 @@ def start_tensorboard(logdir: str, port: str) -> tuple[str, str]:
 
 
 def stop_tensorboard() -> tuple[str, str]:
-    return stop_process(TB_PROC), ""
+    global TB_PROC
+    if TB_PROC is not None and TB_PROC.poll() is None:
+        try:
+            os.killpg(TB_PROC.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        TB_PROC = None
+        return "TensorBoard stopped.", ""
+    TB_PROC = None
+    return "TensorBoard was not running.", ""
 
 
 def gpu_status() -> str:
@@ -668,54 +1193,179 @@ def refresh_configs():
 
 def build_ui():
     gr = require_gradio()
+
+    def update_model_ui(model_label):
+        key = _get_model_key(model_label)
+        info = MODEL_UI.get(key, MODEL_UI["krea2"])
+        return [
+            gr.update(label=info["main_label"]),
+            gr.update(
+                visible=info["vae_label"] is not None,
+                label=info["vae_label"] or "VAE path",
+            ),
+            gr.update(
+                visible=info["te_label"] is not None,
+                label=info["te_label"] or "Text encoder / LLM path",
+            ),
+            gr.update(
+                visible=info["te2_label"] is not None,
+                label=info["te2_label"] or "Secondary text encoder",
+            ),
+            gr.update(
+                visible=info["adapter_label"] is not None,
+                label=info["adapter_label"] or "Adapter / extra path",
+            ),
+            gr.update(visible=info["show_shift"], value=info["shift_default"]),
+            gr.update(visible=info["show_flux_shift"]),
+            gr.update(visible=info["show_max_seq"], value=info["max_seq_default"]),
+            gr.update(visible=info["show_hidream_4bit"]),
+            gr.update(visible=info["show_min_max_t"], value=info["min_t_default"]),
+            gr.update(visible=info["show_min_max_t"], value=info["max_t_default"]),
+            gr.update(visible=info["show_llm_lr"]),
+            gr.update(visible=info["show_sdxl_lr"]),
+            gr.update(value=f"ℹ️ **{info['notes']}**"),
+        ]
+
     with gr.Blocks(title="diffusion-pipe local UI") as app:
         gr.Markdown("# diffusion-pipe local UI")
-        gr.Markdown("Thin local controls for generated configs, training, cache jobs, GPU status, and TensorBoard.")
+        gr.Markdown(
+            "Local controls for config generation, training, cache jobs, GPU status, and TensorBoard. "
+            f"**{len(MODEL_LABELS)} models supported.**"
+        )
 
         with gr.Row():
             config = gr.Dropdown(label="Config", choices=list_configs(), interactive=True)
             refresh = gr.Button("Refresh configs")
 
-        with gr.Accordion("Generate config in UI", open=False):
+        with gr.Accordion("⚙️ Generate config in UI", open=False):
             with gr.Row():
-                ui_model = gr.Dropdown(label="Model", choices=list(MODEL_LABELS.keys()), value="Krea 2")
+                ui_model = gr.Dropdown(
+                    label="Model",
+                    choices=list(MODEL_LABELS.keys()),
+                    value="Krea 2",
+                )
                 ui_run_name = gr.Textbox(label="Run name", value="new_lora")
-                ui_trigger = gr.Textbox(label="Trigger word / caption prefix", placeholder="Optional, e.g. je")
+                ui_trigger = gr.Textbox(
+                    label="Trigger word / caption prefix",
+                    placeholder="Optional, e.g.  je",
+                )
+
             with gr.Row():
-                ui_dataset = gr.Textbox(label="Dataset folder", placeholder='Example: "C:\\AI\\AI-Toolkit\\datasets\\je"')
-                ui_output = gr.Textbox(label="Output folder", placeholder="Blank = training_runs/<model>/<run_name>")
+                ui_dataset = gr.Textbox(
+                    label="Dataset folder",
+                    placeholder='Example: "C:\\AI\\datasets\\my_dataset"',
+                )
+                ui_output = gr.Textbox(
+                    label="Output folder",
+                    placeholder="Blank = training_runs/<model>/<run_name>",
+                )
+
+            ui_main_model = gr.Textbox(
+                label=MODEL_UI["krea2"]["main_label"],
+                placeholder="Path to main model file or folder",
+            )
+
             with gr.Row():
-                ui_main_model = gr.Textbox(label="Main model path/folder", placeholder="Diffusion model, checkpoint, transformer, or Diffusers folder")
-                ui_vae = gr.Textbox(label="VAE path", placeholder="Required for Krea2/Z-Image/Flux2/Anima/AuraFlow")
+                ui_vae = gr.Textbox(
+                    label=MODEL_UI["krea2"]["vae_label"] or "VAE path",
+                    placeholder="VAE .safetensors",
+                    visible=MODEL_UI["krea2"]["vae_label"] is not None,
+                )
+                ui_te = gr.Textbox(
+                    label=MODEL_UI["krea2"]["te_label"] or "Text encoder / LLM path",
+                    placeholder="Text encoder .safetensors or folder",
+                    visible=MODEL_UI["krea2"]["te_label"] is not None,
+                )
+
             with gr.Row():
-                ui_te = gr.Textbox(label="Text encoder / LLM path", placeholder="Required for Krea2/Z-Image/Flux2/LTX2/Anima/AuraFlow")
-                ui_adapter = gr.Textbox(label="Adapter path", placeholder="Optional, used for Z-Image turbo adapter")
+                ui_te2 = gr.Textbox(
+                    label="Secondary text encoder",
+                    placeholder="Second TE path (byt5 / clip / etc)",
+                    visible=MODEL_UI["krea2"]["te2_label"] is not None,
+                )
+                ui_adapter = gr.Textbox(
+                    label=MODEL_UI["krea2"]["adapter_label"] or "Adapter / extra path",
+                    placeholder="Optional path",
+                    visible=MODEL_UI["krea2"]["adapter_label"] is not None,
+                )
+
+            ui_model_notes = gr.Markdown(
+                value=f"ℹ️ **{MODEL_UI['krea2']['notes']}**"
+            )
+
             with gr.Row():
                 ui_resolution = gr.Number(label="Resolution", value=512, precision=0)
                 ui_min_ar = gr.Number(label="Min AR", value=0.5)
                 ui_max_ar = gr.Number(label="Max AR", value=2.0)
                 ui_ar_buckets = gr.Number(label="AR buckets", value=7, precision=0)
                 ui_repeats = gr.Number(label="Repeats", value=1, precision=0)
+
             with gr.Row():
                 ui_rank = gr.Number(label="LoRA rank", value=32, precision=0)
                 ui_lr = gr.Textbox(label="Learning rate", value="1e-4")
                 ui_max_steps = gr.Number(label="Max steps", value=1000, precision=0)
-                ui_save_every = gr.Number(label="Save every", value=250, precision=0)
+                ui_save_every = gr.Number(label="Save every N steps", value=250, precision=0)
+
             with gr.Row():
                 ui_batch = gr.Number(label="Micro batch", value=1, precision=0)
                 ui_grad_accum = gr.Number(label="Gradient accumulation", value=1, precision=0)
                 ui_blocks = gr.Number(label="blocks_to_swap", value=16, precision=0)
                 ui_cache_batch = gr.Number(label="Caching batch size", value=1, precision=0)
+
             with gr.Row():
-                ui_optimizer = gr.Dropdown(label="Optimizer", choices=["adamw8bitkahan", "adamw_optimi"], value="adamw8bitkahan")
+                ui_optimizer = gr.Dropdown(
+                    label="Optimizer",
+                    choices=["adamw8bitkahan", "adamw_optimi"],
+                    value="adamw8bitkahan",
+                )
                 ui_float8 = gr.Checkbox(label="Use float8 dtype where supported", value=True)
-                ui_shift = gr.Number(label="Shift", value=1, precision=0)
-                ui_max_seq = gr.Number(label="Max sequence length", value=768, precision=0)
+                ui_flux_shift = gr.Checkbox(
+                    label="flux_shift = true",
+                    value=False,
+                    visible=False,
+                )
+                ui_shift = gr.Number(
+                    label="Shift (numeric)",
+                    value=3,
+                    precision=0,
+                    visible=False,
+                )
+                ui_max_seq = gr.Number(
+                    label="Max sequence length",
+                    value=768,
+                    precision=0,
+                    visible=False,
+                )
+
             with gr.Row():
-                ui_llm_lr = gr.Textbox(label="Anima llm_adapter_lr", value="0")
+                ui_hidream_4bit = gr.Checkbox(
+                    label="HiDream: Llama3 4-bit quantization",
+                    value=True,
+                    visible=False,
+                )
+                ui_min_t = gr.Number(
+                    label="min_t (Wan2.2 timestep range start)",
+                    value=0.0,
+                    visible=False,
+                )
+                ui_max_t = gr.Number(
+                    label="max_t (Wan2.2 timestep range end)",
+                    value=0.875,
+                    visible=False,
+                )
+
+            with gr.Row():
+                ui_llm_lr = gr.Textbox(
+                    label="Anima: llm_adapter_lr",
+                    value="0",
+                    visible=False,
+                )
+
+            with gr.Row(visible=False) as ui_sdxl_lr_row:
                 ui_unet_lr = gr.Textbox(label="SDXL unet_lr", value="4e-5")
                 ui_te1_lr = gr.Textbox(label="SDXL text_encoder_1_lr", value="2e-5")
                 ui_te2_lr = gr.Textbox(label="SDXL text_encoder_2_lr", value="2e-5")
+
             ui_generate = gr.Button("Generate config", variant="primary")
 
         with gr.Row():
@@ -724,21 +1374,24 @@ def build_ui():
                 choices=["train", "cache_only", "resume latest checkpoint", "resume specific checkpoint"],
                 value="train",
             )
-            checkpoint = gr.Textbox(label="Checkpoint folder", placeholder="Only needed for resume specific checkpoint")
+            checkpoint = gr.Textbox(
+                label="Checkpoint folder",
+                placeholder="Only needed for resume specific checkpoint",
+            )
 
         with gr.Row():
-            start = gr.Button("Start", variant="primary")
-            stop = gr.Button("Stop job", variant="stop")
-            force_stop = gr.Button("Force stop", variant="stop")
-            attach_log = gr.Button("Attach latest UI log")
+            start = gr.Button("▶ Start", variant="primary")
+            stop = gr.Button("⏹ Stop job", variant="stop")
+            force_stop = gr.Button("⚡ Force stop", variant="stop")
+            attach_log = gr.Button("📎 Attach latest UI log")
 
         status = gr.Textbox(label="Status", lines=4)
         log = gr.Textbox(label="Training log tail", lines=18)
 
         with gr.Row():
-            gpu = gr.Button("GPU/process status")
-            runs = gr.Button("Recent run files")
-            checkpoints = gr.Button("Saved checkpoints")
+            gpu = gr.Button("📊 GPU / process status")
+            runs = gr.Button("📁 Recent run files")
+            checkpoints = gr.Button("💾 Saved checkpoints")
 
         info = gr.Textbox(label="Info", lines=12)
 
@@ -753,43 +1406,43 @@ def build_ui():
         tb_status = gr.Textbox(label="TensorBoard status", lines=2)
         tb_embed = gr.HTML(label="TensorBoard")
 
-        refresh.click(refresh_configs, outputs=config)
+        # --- event wiring ---
+
+        dynamic_outputs = [
+            ui_main_model,
+            ui_vae,
+            ui_te,
+            ui_te2,
+            ui_adapter,
+            ui_shift,
+            ui_flux_shift,
+            ui_max_seq,
+            ui_hidream_4bit,
+            ui_min_t,
+            ui_max_t,
+            ui_llm_lr,
+            ui_sdxl_lr_row,
+            ui_model_notes,
+        ]
+
+        ui_model.change(update_model_ui, inputs=ui_model, outputs=dynamic_outputs)
+
         ui_generate.click(
             generate_config_from_ui,
             inputs=[
-                ui_model,
-                ui_run_name,
-                ui_dataset,
-                ui_output,
-                ui_trigger,
-                ui_main_model,
-                ui_vae,
-                ui_te,
-                ui_adapter,
-                ui_resolution,
-                ui_min_ar,
-                ui_max_ar,
-                ui_ar_buckets,
-                ui_repeats,
-                ui_rank,
-                ui_lr,
-                ui_max_steps,
-                ui_save_every,
-                ui_batch,
-                ui_grad_accum,
-                ui_blocks,
-                ui_cache_batch,
-                ui_optimizer,
-                ui_float8,
-                ui_shift,
-                ui_max_seq,
-                ui_llm_lr,
-                ui_unet_lr,
-                ui_te1_lr,
-                ui_te2_lr,
+                ui_model, ui_run_name, ui_dataset, ui_output, ui_trigger,
+                ui_main_model, ui_vae, ui_te, ui_te2, ui_adapter,
+                ui_resolution, ui_min_ar, ui_max_ar, ui_ar_buckets, ui_repeats,
+                ui_rank, ui_lr, ui_max_steps, ui_save_every,
+                ui_batch, ui_grad_accum, ui_blocks, ui_cache_batch,
+                ui_optimizer, ui_float8, ui_flux_shift, ui_shift, ui_max_seq,
+                ui_llm_lr, ui_unet_lr, ui_te1_lr, ui_te2_lr,
+                ui_hidream_4bit, ui_min_t, ui_max_t,
             ],
             outputs=[status, config],
         )
+
+        refresh.click(refresh_configs, outputs=config)
         start.click(start_training, inputs=[config, action, checkpoint], outputs=[status, log])
         stop.click(stop_training, outputs=[status, log])
         force_stop.click(force_stop_training, outputs=[status, log])
@@ -804,8 +1457,12 @@ def build_ui():
 
 
 def main() -> None:
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--port", type=int, default=7860)
+    args, _ = parser.parse_known_args()
     app = build_ui()
-    app.launch(server_name="0.0.0.0", server_port=7860, inbrowser=False)
+    app.launch(server_name="0.0.0.0", server_port=args.port, inbrowser=False)
 
 
 if __name__ == "__main__":
