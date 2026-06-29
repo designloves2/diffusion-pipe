@@ -1373,6 +1373,243 @@ def refresh_configs():
     return gr.update(choices=list_configs())
 
 
+def _infer_model_label_from_cfg(folder: str, ms: dict) -> str:
+    _KEY_TO_LABEL = {v: k for k, v in MODEL_LABELS.items()}
+    folder_map = {
+        "chroma": "chroma", "flux2": "flux2_dev", "qwen_image": "qwen_image",
+        "z_image": "z_image", "hunyuan_image": "hunyuan_image",
+        "hunyuan_video": "hunyuan_video", "hunyuan_video_15": "hunyuan_video_15",
+        "hidream": "hidream", "ltx_video": "ltx_video", "ltx2": "ltx2",
+        "wan21": "wan21", "wan22": "wan22_low",
+        "lumina_2": "lumina_2", "cosmos": "cosmos",
+        "cosmos_predict2": "cosmos_predict2", "omnigen2": "omnigen2",
+        "ideogram4": "ideogram4", "ernie_image": "ernie_image",
+        "anima": "anima", "krea2": "krea2", "auraflow": "auraflow",
+        "sd3": "sd3", "sdxl": "sdxl",
+    }
+    model_key = folder_map.get(folder, "krea2")
+    if folder == "flux":
+        tr = ms.get("transformer_path", "").lower()
+        model_key = "flux_kontext" if "kontext" in tr else "flux"
+    elif folder == "flux2":
+        tes = ms.get("text_encoders") or []
+        te_p = (tes[0].get("path", "") if tes else "").lower()
+        if "qwen_3_8b" in te_p or "qwen3_8b" in te_p:
+            model_key = "flux2_klein9b"
+        elif "qwen_3_4b" in te_p or "qwen3_4b" in te_p:
+            model_key = "flux2_klein4b"
+        else:
+            model_key = "flux2_dev"
+    elif folder == "qwen_image":
+        if ms.get("transformer_path"):
+            model_key = "qwen_image_edit"
+    elif folder == "wan22":
+        model_key = "wan22_high" if float(ms.get("min_t", 0)) >= 0.5 else "wan22_low"
+    return _KEY_TO_LABEL.get(model_key, "Krea 2")
+
+
+def _extract_paths(model_key: str, ms: dict) -> tuple[str, str, str, str, str]:
+    """Return (main, vae, te, te2, adapter) from a loaded model TOML section."""
+    tes = ms.get("text_encoders") or []
+
+    def _tp(idx=0):
+        if not tes or idx >= len(tes):
+            return ""
+        e = tes[idx]
+        if isinstance(e, dict):
+            paths = e.get("paths") or [e.get("path", "")]
+            return paths[0] if paths else ""
+        return ""
+
+    def _tp2(idx=0):
+        if not tes or idx >= len(tes):
+            return ""
+        e = tes[idx]
+        if isinstance(e, dict):
+            paths = e.get("paths", [])
+            return paths[1] if len(paths) > 1 else ""
+        return ""
+
+    if model_key in ("flux", "flux_kontext"):
+        return ms.get("diffusers_path", ""), "", "", "", ms.get("transformer_path", "")
+    if model_key == "chroma":
+        return ms.get("diffusers_path", ""), "", "", "", ms.get("transformer_path", "")
+    if model_key in ("flux2_dev", "flux2_klein4b", "flux2_klein9b"):
+        return ms.get("diffusion_model", ""), ms.get("vae", ""), _tp(), "", ""
+    if model_key == "qwen_image":
+        main = ms.get("diffusers_path") or ms.get("transformer_path", "")
+        return main, ms.get("vae_path", ""), ms.get("text_encoder_path", ""), "", ""
+    if model_key == "qwen_image_edit":
+        return ms.get("diffusers_path", ""), "", "", "", ms.get("transformer_path", "")
+    if model_key == "z_image":
+        adps = ms.get("merge_adapters") or []
+        return ms.get("diffusion_model", ""), ms.get("vae", ""), _tp(), "", adps[0] if adps else ""
+    if model_key == "hunyuan_image":
+        return ms.get("transformer_path", ""), ms.get("vae_path", ""), ms.get("text_encoder_path", ""), ms.get("byt5_path", ""), ""
+    if model_key == "hunyuan_video":
+        return ms.get("transformer_path", ""), ms.get("vae_path", ""), ms.get("llm_path", ""), ms.get("clip_path", ""), ""
+    if model_key == "hunyuan_video_15":
+        return ms.get("diffusion_model", ""), ms.get("vae", ""), _tp(), _tp2(), ""
+    if model_key == "hidream":
+        return ms.get("diffusers_path", ""), "", ms.get("llama3_path", ""), "", ""
+    if model_key == "ltx_video":
+        return ms.get("diffusers_path", ""), "", "", "", ms.get("single_file_path", "")
+    if model_key == "ltx2":
+        return ms.get("diffusion_model", ""), "", ms.get("text_encoder", ""), "", ""
+    if model_key in ("wan21", "wan22_low", "wan22_high"):
+        return ms.get("ckpt_path", ""), ms.get("transformer_path", ""), ms.get("llm_path", ""), "", ""
+    if model_key == "lumina_2":
+        return ms.get("transformer_path", ""), ms.get("vae_path", ""), ms.get("llm_path", ""), "", ""
+    if model_key == "cosmos":
+        return ms.get("transformer_path", ""), ms.get("vae_path", ""), ms.get("text_encoder_path", ""), "", ""
+    if model_key == "cosmos_predict2":
+        return ms.get("transformer_path", ""), ms.get("vae_path", ""), ms.get("t5_path", ""), "", ""
+    if model_key == "omnigen2":
+        return ms.get("diffusers_path", ""), "", "", "", ""
+    if model_key in ("ideogram4", "ernie_image"):
+        return ms.get("diffusion_model", ""), ms.get("vae", ""), _tp(), "", ""
+    if model_key == "anima":
+        return ms.get("transformer_path", ""), ms.get("vae_path", ""), ms.get("llm_path", ""), "", ""
+    if model_key == "krea2":
+        return ms.get("diffusion_model", ""), ms.get("vae", ""), _tp(), "", ""
+    if model_key == "auraflow":
+        return ms.get("transformer_path", ""), ms.get("vae_path", ""), ms.get("text_encoder_path", ""), "", ""
+    if model_key == "sd3":
+        return ms.get("diffusers_path", ""), "", "", "", ""
+    if model_key == "sdxl":
+        return ms.get("checkpoint_path", ""), "", "", "", ""
+    return "", "", "", "", ""
+
+
+def load_config_to_ui(choice: str):
+    import gradio as gr
+    no = gr.update()
+    _N = 37  # outputs after (msg, accordion)
+
+    if not choice:
+        return ("",  gr.update()) + (no,) * _N
+
+    try:
+        cfg = config_path(choice)
+    except ValueError as exc:
+        return (str(exc), gr.update()) + (no,) * _N
+
+    try:
+        with cfg.open("rb") as f:
+            data = tomllib.load(f)
+    except Exception as exc:
+        return (f"Config 파싱 실패: {exc}", gr.update()) + (no,) * _N
+
+    ms = data.get("model", {})
+    opt = data.get("optimizer", {})
+    adp = data.get("adapter", {})
+    mon = data.get("monitoring", {})
+
+    folder = cfg.parent.name
+    label = _infer_model_label_from_cfg(folder, ms)
+    model_key = MODEL_LABELS.get(label, "krea2")
+    info = MODEL_UI.get(model_key, MODEL_UI["krea2"])
+
+    main_p, vae_p, te_p, te2_p, adp_p = _extract_paths(model_key, ms)
+
+    run_name = mon.get("wandb_run_name") or cfg.stem
+    output_d = data.get("output_dir", "")
+    rank = adp.get("rank", 32)
+    lr_v = str(opt.get("lr", "1e-4"))
+    opt_type = opt.get("type", "")
+    optimizer = "adamw_optimi" if "optimi" in opt_type.lower() else "adamw8bitkahan"
+    max_steps = data.get("max_steps", 1000)
+    save_every = data.get("save_every_n_steps", 250)
+    batch = data.get("micro_batch_size_per_gpu", 1)
+    grad_accum = data.get("gradient_accumulation_steps", 1)
+    blocks = data.get("blocks_to_swap", 0)
+    cache_batch = data.get("caching_batch_size", 1)
+    float8 = ms.get("transformer_dtype") == "float8" or ms.get("diffusion_model_dtype") == "float8"
+    flux_shift = bool(ms.get("flux_shift", False))
+    shift_v = ms.get("shift", info["shift_default"])
+    max_seq = ms.get("max_llama3_sequence_length") or ms.get("max_sequence_length") or info["max_seq_default"]
+    hidream_4bit = bool(ms.get("llama3_4bit", False))
+    min_t_v = float(ms.get("min_t", info["min_t_default"]))
+    max_t_v = float(ms.get("max_t", info["max_t_default"]))
+    llm_lr = str(ms.get("llm_adapter_lr", "0"))
+    unet_lr = str(ms.get("unet_lr", "4e-5"))
+    te1_lr = str(ms.get("text_encoder_1_lr", "2e-5"))
+    te2_lr_s = str(ms.get("text_encoder_2_lr", "2e-5"))
+
+    ds_path = Path(data.get("dataset", "")) if data.get("dataset") else None
+    dataset_dir = ""
+    trigger = ""
+    resolution = 512
+    min_ar = 0.5
+    max_ar = 2.0
+    ar_buckets = 7
+    repeats = 1
+
+    if ds_path and ds_path.is_file():
+        try:
+            with ds_path.open("rb") as f:
+                ds = tomllib.load(f)
+            resolution = (ds.get("resolutions") or [512])[0]
+            min_ar = ds.get("min_ar", 0.5)
+            max_ar = ds.get("max_ar", 2.0)
+            ar_buckets = ds.get("num_ar_buckets", 7)
+            dirs = ds.get("directory") or []
+            if dirs:
+                d0 = dirs[0]
+                dataset_dir = d0.get("path", "")
+                repeats = d0.get("num_repeats", 1)
+                cp = d0.get("caption_prefix", "")
+                trigger = cp.rstrip(", ").rstrip(",").strip()
+        except Exception:
+            pass
+
+    msg = f"✅ 불러옴: {cfg.name}"
+    if ds_path and not ds_path.is_file():
+        msg += f"\n⚠️ 데이터셋 config 없음: {ds_path}"
+
+    return (
+        msg,
+        gr.update(open=True),
+        gr.update(value=label),
+        gr.update(value=run_name),
+        gr.update(value=trigger),
+        gr.update(value=dataset_dir),
+        gr.update(value=output_d),
+        gr.update(value=main_p,  label=info["main_label"]),
+        gr.update(value=vae_p,   visible=info["vae_label"]     is not None, label=info["vae_label"]     or "VAE path"),
+        gr.update(value=te_p,    visible=info["te_label"]      is not None, label=info["te_label"]      or "Text encoder / LLM path"),
+        gr.update(value=te2_p,   visible=info["te2_label"]     is not None, label=info["te2_label"]     or "Secondary text encoder"),
+        gr.update(value=adp_p,   visible=info["adapter_label"] is not None, label=info["adapter_label"] or "Adapter / extra path"),
+        gr.update(value=f"ℹ️ **{info['notes']}**"),
+        gr.update(value=resolution),
+        gr.update(value=min_ar),
+        gr.update(value=max_ar),
+        gr.update(value=ar_buckets),
+        gr.update(value=repeats),
+        gr.update(value=rank),
+        gr.update(value=lr_v),
+        gr.update(value=max_steps),
+        gr.update(value=save_every),
+        gr.update(value=batch),
+        gr.update(value=grad_accum),
+        gr.update(value=blocks),
+        gr.update(value=cache_batch),
+        gr.update(value=optimizer),
+        gr.update(value=float8),
+        gr.update(value=flux_shift,   visible=info["show_flux_shift"]),
+        gr.update(value=shift_v,      visible=info["show_shift"]),
+        gr.update(value=max_seq,      visible=info["show_max_seq"]),
+        gr.update(value=hidream_4bit, visible=info["show_hidream_4bit"]),
+        gr.update(value=min_t_v,      visible=info["show_min_max_t"]),
+        gr.update(value=max_t_v,      visible=info["show_min_max_t"]),
+        gr.update(value=llm_lr,       visible=info["show_llm_lr"]),
+        gr.update(visible=info["show_sdxl_lr"]),
+        gr.update(value=unet_lr),
+        gr.update(value=te1_lr),
+        gr.update(value=te2_lr_s),
+    )
+
+
 def build_ui():
     gr = require_gradio()
 
@@ -1418,6 +1655,7 @@ def build_ui():
         with gr.Row():
             config = gr.Dropdown(label="Config", choices=list_configs(), interactive=True)
             refresh = gr.Button("Refresh configs")
+            load_btn = gr.Button("📂 Load config")
 
         with gr.Row():
             gr.Markdown("**VRAM 프리셋** — 모델 선택 후 클릭하면 아래 Config UI 항목에 추천값이 입력됩니다.")
@@ -1428,7 +1666,7 @@ def build_ui():
             btn_24gb = gr.Button("⚡ 24GB 프리셋",  variant="secondary", scale=1)
             btn_32gb = gr.Button("⚡ 32GB 프리셋",  variant="secondary", scale=1)
 
-        with gr.Accordion("⚙️ Generate config in UI", open=False):
+        with gr.Accordion("⚙️ Generate config in UI", open=False) as ui_accordion:
             with gr.Row():
                 ui_model = gr.Dropdown(
                     label="Model",
@@ -1557,7 +1795,7 @@ def build_ui():
                 ui_te1_lr = gr.Textbox(label="SDXL text_encoder_1_lr", value="2e-5")
                 ui_te2_lr = gr.Textbox(label="SDXL text_encoder_2_lr", value="2e-5")
 
-            ui_generate = gr.Button("Generate config", variant="primary")
+            ui_generate = gr.Button("💾 Generate / Update config", variant="primary")
 
         with gr.Row():
             action = gr.Radio(
@@ -1617,6 +1855,19 @@ def build_ui():
         ]
 
         ui_model.change(update_model_ui, inputs=ui_model, outputs=dynamic_outputs)
+
+        _load_outputs = [
+            status, ui_accordion,
+            ui_model, ui_run_name, ui_trigger, ui_dataset, ui_output,
+            ui_main_model, ui_vae, ui_te, ui_te2, ui_adapter, ui_model_notes,
+            ui_resolution, ui_min_ar, ui_max_ar, ui_ar_buckets, ui_repeats,
+            ui_rank, ui_lr, ui_max_steps, ui_save_every,
+            ui_batch, ui_grad_accum, ui_blocks, ui_cache_batch,
+            ui_optimizer, ui_float8, ui_flux_shift, ui_shift, ui_max_seq,
+            ui_hidream_4bit, ui_min_t, ui_max_t,
+            ui_llm_lr, ui_sdxl_lr_row, ui_unet_lr, ui_te1_lr, ui_te2_lr,
+        ]
+        load_btn.click(load_config_to_ui, inputs=config, outputs=_load_outputs)
 
         _preset_outputs = [
             status, ui_resolution, ui_rank, ui_lr,
