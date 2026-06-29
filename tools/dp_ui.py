@@ -3,6 +3,7 @@ import os
 import signal
 import subprocess
 import time
+import tomllib
 from pathlib import Path
 
 
@@ -208,6 +209,72 @@ def recent_runs() -> str:
     return "\n".join(lines) if lines else "No run files yet."
 
 
+def saved_checkpoints(choice: str) -> str:
+    try:
+        cfg = config_path(choice)
+    except ValueError as exc:
+        return str(exc)
+
+    try:
+        with cfg.open("rb") as handle:
+            config_data = tomllib.load(handle)
+    except Exception as exc:
+        return f"Could not read config: {exc}"
+
+    output_dir = Path(config_data.get("output_dir", RUN_ROOT))
+    save_every = config_data.get("save_every_n_steps")
+    max_steps = config_data.get("max_steps")
+
+    if not output_dir.exists():
+        return f"Output directory does not exist yet:\n{output_dir}"
+
+    run_dirs = [p for p in output_dir.iterdir() if p.is_dir()]
+    if any(p.name.startswith("step") for p in run_dirs):
+        run_dirs = [output_dir]
+    else:
+        run_dirs = sorted(run_dirs, key=lambda p: p.stat().st_mtime, reverse=True)
+
+    rows: list[tuple[int, Path, Path | None]] = []
+    for run_dir in run_dirs[:8]:
+        for step_dir in run_dir.iterdir():
+            if not step_dir.is_dir() or not step_dir.name.startswith("step"):
+                continue
+            step_text = step_dir.name.removeprefix("step")
+            if not step_text.isdigit():
+                continue
+            adapter = step_dir / "adapter_model.safetensors"
+            rows.append((int(step_text), step_dir, adapter if adapter.exists() else None))
+
+    rows.sort(key=lambda item: item[0], reverse=True)
+    if not rows:
+        return f"No saved step folders found yet.\nOutput directory:\n{output_dir}"
+
+    latest_step = rows[0][0]
+    header = [f"Output: {output_dir}"]
+    if save_every:
+        next_step = latest_step + int(save_every)
+        if max_steps:
+            next_step = min(next_step, int(max_steps))
+        header.append(f"Latest saved step: {latest_step}")
+        header.append(f"Save every: {save_every} steps")
+        if not max_steps or latest_step < int(max_steps):
+            header.append(f"Next expected save: step{next_step}")
+    if max_steps:
+        header.append(f"Max steps: {max_steps}")
+
+    lines = ["\n".join(header), "", "Saved checkpoints:"]
+    for step, step_dir, adapter in rows[:30]:
+        when = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(step_dir.stat().st_mtime))
+        if adapter:
+            size_mb = adapter.stat().st_size / (1024 * 1024)
+            adapter_text = f"{size_mb:.1f} MB"
+        else:
+            adapter_text = "adapter missing"
+        rel = step_dir.relative_to(output_dir).as_posix()
+        lines.append(f"step{step:<5}  {when}  {adapter_text:>12}  {rel}")
+    return "\n".join(lines)
+
+
 def refresh_configs():
     return list_configs()
 
@@ -240,6 +307,7 @@ def build_ui():
         with gr.Row():
             gpu = gr.Button("GPU/process status")
             runs = gr.Button("Recent run files")
+            checkpoints = gr.Button("Saved checkpoints")
 
         info = gr.Textbox(label="Info", lines=12)
 
@@ -259,6 +327,7 @@ def build_ui():
         stop.click(stop_training, outputs=[status, log])
         gpu.click(gpu_status, outputs=info)
         runs.click(recent_runs, outputs=info)
+        checkpoints.click(saved_checkpoints, inputs=config, outputs=info)
         tb_start.click(start_tensorboard, inputs=[tb_logdir, tb_port], outputs=[tb_status, tb_embed])
         tb_stop.click(stop_tensorboard, outputs=[tb_status, tb_embed])
 
