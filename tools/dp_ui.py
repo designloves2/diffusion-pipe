@@ -343,6 +343,182 @@ MODEL_UI = {
     ),
 }
 
+def _p(rank, res, lr, blocks=0, float8=True, batch=1, grad=1, cache=1, max_seq=None, note=None):
+    return dict(rank=rank, res=res, lr=lr, blocks=blocks, float8=float8,
+                batch=batch, grad=grad, cache=cache, max_seq=max_seq, note=note)
+
+_IMPOSSIBLE = None  # sentinel — model truly can't run at this VRAM tier
+
+# fmt: off
+# VRAM preset tables. Each entry maps model_key → settings dict (or _IMPOSSIBLE).
+# For 8/16 GB: impossible models get _IMPOSSIBLE (status note shown, no popup).
+# For 16 GB user tried to maximize — only truly impossible models get _IMPOSSIBLE.
+VRAM_PRESETS: dict[int, dict[str, dict | None]] = {
+    8: {
+        "flux":             _p(8,  512, "5e-5", 24, True,  1, 2, 1, note="⚠️ 8GB에서 매우 불안정. OOM 가능성 높음. PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True 권장"),
+        "flux_kontext":     _p(8,  512, "5e-5", 24, True,  1, 2, 1, note="⚠️ 8GB에서 매우 불안정. 이미지 단독 학습만 권장"),
+        "flux2_dev":        _IMPOSSIBLE,
+        "flux2_klein4b":    _p(8,  512, "1e-4", 14, True,  1, 2, 1, note="⚠️ 8GB에서 불안정. 실패 시 blocks_to_swap 증가"),
+        "flux2_klein9b":    _IMPOSSIBLE,
+        "chroma":           _p(16, 512, "1e-4", 14, True,  1, 2, 1),
+        "qwen_image":       _p(16, 640, "5e-5", 20, True,  1, 2, 1, note="⚠️ PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True 필수. 640px은 공식 권장 해상도"),
+        "qwen_image_edit":  _IMPOSSIBLE,
+        "z_image":          _p(32, 512, "1e-4",  0, True,  1, 1, 1),
+        "hunyuan_image":    _IMPOSSIBLE,
+        "hunyuan_video":    _IMPOSSIBLE,
+        "hunyuan_video_15": _IMPOSSIBLE,
+        "hidream":          _IMPOSSIBLE,
+        "ltx_video":        _p(16, 512, "1e-4", 10, True,  1, 2, 1),
+        "ltx2":             _IMPOSSIBLE,
+        "wan21":            _p(16, 512, "5e-5", 12, True,  1, 2, 1, note="Wan2.1 1.3B 모델만 가능. 14B는 8GB 불가"),
+        "wan22_low":        _IMPOSSIBLE,
+        "wan22_high":       _IMPOSSIBLE,
+        "lumina_2":         _p(16, 512, "5e-5", 10, False, 1, 2, 1),
+        "cosmos":           _IMPOSSIBLE,
+        "cosmos_predict2":  _IMPOSSIBLE,
+        "omnigen2":         _IMPOSSIBLE,
+        "ideogram4":        _IMPOSSIBLE,
+        "ernie_image":      _IMPOSSIBLE,
+        "anima":            _p(16, 512, "5e-5",  8, False, 1, 1, 1),
+        "krea2":            _p(16, 512, "1e-4",  4, True,  1, 1, 1),
+        "auraflow":         _p(16, 512, "1e-4",  8, True,  1, 2, 1, max_seq=256),
+        "sd3":              _p(16, 512, "1e-4",  8, True,  1, 2, 1),
+        "sdxl":             _p(16, 512, "4e-5",  0, False, 1, 2, 1),
+    },
+    16: {
+        "flux":             _p(16, 512, "5e-5", 14, True,  1, 1, 1),
+        "flux_kontext":     _p(16, 512, "5e-5", 14, True,  1, 1, 1),
+        "flux2_dev":        _p(8,  512, "1e-4", 28, True,  1, 2, 1, note="⚠️ Flux 2 Dev 12B는 16GB에서 매우 느림. blocks_to_swap 최대로 설정. 장시간 소요"),
+        "flux2_klein4b":    _p(32, 512, "1e-4",  6, True,  1, 1, 1),
+        "flux2_klein9b":    _p(16, 512, "1e-4", 20, True,  1, 2, 1, note="⚠️ 9B 모델. 16GB에서 빡빡함. 실패 시 rank 낮추기"),
+        "chroma":           _p(32, 768, "1e-4",  6, True,  1, 1, 1),
+        "qwen_image":       _p(32, 768, "5e-5", 10, True,  1, 1, 1, note="PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True 권장"),
+        "qwen_image_edit":  _p(8,  512, "5e-5", 28, True,  1, 2, 1, note="⚠️ 16GB에서 매우 빡빡. expandable_segments:True 필수"),
+        "z_image":          _p(64, 768, "1e-4",  0, True,  1, 1, 1),
+        "hunyuan_image":    _p(16, 512, "5e-5", 24, True,  1, 2, 1, note="📌 HunyuanImage는 512 입력 → 실질적 1024px 효과. 16GB에서 가능"),
+        "hunyuan_video":    _p(4,  256, "5e-5", 38, True,  1, 2, 1, note="⚠️ 16GB에서 이미지 단일 프레임 학습만 권장. 비디오 시퀀스는 OOM 가능. 매우 느림"),
+        "hunyuan_video_15": _IMPOSSIBLE,
+        "hidream":          _p(8, 1024, "5e-5", 28, True,  1, 2, 1, max_seq=128, note="⚠️ 4bit Llama3 필수. 매우 느림. 실패 시 rank 4 / blocks 32로"),
+        "ltx_video":        _p(32, 768, "1e-4",  4, True,  1, 1, 1),
+        "ltx2":             _p(8,  512, "1e-4", 44, True,  1, 2, 1, note="⚠️ LTX 2.3 22B는 16GB에서 한계. blocks_to_swap 최대(44). 매우 느림"),
+        "wan21":            _p(32, 768, "5e-5",  0, True,  1, 1, 1, note="Wan2.1 1.3B 기준. 14B 사용 시 blocks_to_swap=28 이상 필요"),
+        "wan22_low":        _p(16, 512, "5e-5", 28, True,  1, 2, 1, note="⚠️ 14B 모델. 매우 느림. 실패 시 rank 8 / blocks 32"),
+        "wan22_high":       _p(16, 512, "5e-5", 28, True,  1, 2, 1, note="⚠️ 14B 모델. 매우 느림. 실패 시 rank 8 / blocks 32"),
+        "lumina_2":         _p(32, 768, "5e-5",  4, False, 1, 1, 1),
+        "cosmos":           _IMPOSSIBLE,
+        "cosmos_predict2":  _p(8,  512, "5e-5", 24, True,  1, 2, 1, note="📌 float8_e5m2 사용 필수 (e4m3fn 아님). 2B 변종 권장"),
+        "omnigen2":         _p(16, 512, "5e-5", 14, True,  1, 2, 1),
+        "ideogram4":        _p(8,  512, "1e-4", 20, True,  1, 2, 1, note="⚠️ 16GB에서 빡빡함. 실패 시 blocks 증가"),
+        "ernie_image":      _p(16, 512, "1e-4", 14, True,  1, 1, 1),
+        "anima":            _p(32, 768, "5e-5",  0, False, 1, 1, 1),
+        "krea2":            _p(32, 512, "1e-4",  0, True,  1, 1, 1),
+        "auraflow":         _p(32, 768, "1e-4",  4, True,  1, 1, 1, max_seq=768),
+        "sd3":              _p(32, 768, "1e-4",  0, True,  1, 1, 1),
+        "sdxl":             _p(32, 768, "4e-5",  0, False, 1, 1, 1),
+    },
+    24: {
+        "flux":             _p(32, 768, "5e-5",  6, True,  1, 1, 1),
+        "flux_kontext":     _p(32, 768, "5e-5",  6, True,  1, 1, 1),
+        "flux2_dev":        _p(16, 512, "1e-4", 24, True,  1, 1, 1, note="⚠️ Flux 2 Dev 12B는 24GB에서도 빡빡. 실패 시 blocks 증가"),
+        "flux2_klein4b":    _p(64, 768, "1e-4",  0, False, 1, 1, 1),
+        "flux2_klein9b":    _p(32, 768, "1e-4", 10, True,  1, 1, 1),
+        "chroma":           _p(64,1024, "1e-4",  0, True,  1, 1, 1),
+        "qwen_image":       _p(64,1024, "5e-5",  0, True,  1, 1, 1),
+        "qwen_image_edit":  _p(16, 512, "5e-5", 16, True,  1, 1, 1),
+        "z_image":          _p(64,1024, "1e-4",  0, True,  1, 1, 1),
+        "hunyuan_image":    _p(32,1024, "5e-5", 12, True,  1, 1, 1),
+        "hunyuan_video":    _p(16, 320, "5e-5", 30, True,  1, 2, 1, note="이미지 단일 프레임 권장. 비디오 시퀀스는 VRAM 추가 필요"),
+        "hunyuan_video_15": _p(8,  256, "5e-5", 36, True,  1, 2, 1, note="⚠️ 24GB에서도 매우 어려움. 이미지 전용 권장"),
+        "hidream":          _p(16,1024, "5e-5", 20, True,  1, 1, 1, max_seq=128, note="4bit Llama3 권장. 학습 가능"),
+        "ltx_video":        _p(64,1024, "1e-4",  0, False, 1, 1, 1),
+        "ltx2":             _p(16, 512, "1e-4", 40, True,  1, 1, 1),
+        "wan21":            _p(64,1024, "5e-5",  0, True,  1, 1, 1),
+        "wan22_low":        _p(32, 768, "5e-5", 20, True,  1, 1, 1),
+        "wan22_high":       _p(32, 768, "5e-5", 20, True,  1, 1, 1),
+        "lumina_2":         _p(64,1024, "5e-5",  0, False, 1, 1, 1),
+        "cosmos":           _p(8,  512, "5e-5",  0, False, 1, 2, 1, note="⚠️ Cosmos는 학습 품질이 불확실. 공식 지원 잠정적"),
+        "cosmos_predict2":  _p(32, 768, "5e-5", 10, True,  1, 1, 1, note="float8_e5m2 사용 필수"),
+        "omnigen2":         _p(32, 768, "5e-5",  6, True,  1, 1, 1),
+        "ideogram4":        _p(32, 512, "1e-4",  6, True,  1, 1, 1),
+        "ernie_image":      _p(32, 768, "1e-4",  4, True,  1, 1, 1),
+        "anima":            _p(64,1024, "5e-5",  0, False, 1, 1, 1),
+        "krea2":            _p(64, 768, "1e-4",  0, True,  1, 1, 1),
+        "auraflow":         _p(64,1024, "1e-4",  0, True,  1, 1, 1, max_seq=768),
+        "sd3":              _p(64,1024, "1e-4",  0, True,  1, 1, 1),
+        "sdxl":             _p(64,1024, "4e-5",  0, False, 1, 1, 1),
+    },
+    32: {
+        "flux":             _p(64,1024, "5e-5",  0, True,  1, 1, 1),
+        "flux_kontext":     _p(64,1024, "5e-5",  0, True,  1, 1, 1),
+        "flux2_dev":        _p(32, 768, "1e-4", 12, True,  1, 1, 1),
+        "flux2_klein4b":    _p(64,1024, "1e-4",  0, False, 1, 1, 1),
+        "flux2_klein9b":    _p(64,1024, "1e-4",  0, True,  1, 1, 1),
+        "chroma":           _p(64,1024, "1e-4",  0, True,  1, 1, 1),
+        "qwen_image":       _p(64,1024, "5e-5",  0, True,  1, 1, 1),
+        "qwen_image_edit":  _p(32, 768, "5e-5",  8, True,  1, 1, 1),
+        "z_image":          _p(128,1024,"1e-4",  0, True,  1, 1, 1),
+        "hunyuan_image":    _p(64,1024, "5e-5",  0, True,  1, 1, 1),
+        "hunyuan_video":    _p(16, 512, "5e-5", 20, True,  1, 1, 1),
+        "hunyuan_video_15": _p(16, 512, "5e-5", 24, True,  1, 1, 1),
+        "hidream":          _p(32,1024, "5e-5",  0, True,  1, 1, 1, max_seq=128),
+        "ltx_video":        _p(64,1024, "1e-4",  0, False, 1, 1, 1),
+        "ltx2":             _p(32, 768, "1e-4", 30, True,  1, 1, 1),
+        "wan21":            _p(64,1024, "5e-5",  0, True,  1, 1, 1),
+        "wan22_low":        _p(64,1024, "5e-5", 10, True,  1, 1, 1),
+        "wan22_high":       _p(64,1024, "5e-5", 10, True,  1, 1, 1),
+        "lumina_2":         _p(64,1024, "5e-5",  0, False, 1, 1, 1),
+        "cosmos":           _p(16, 512, "5e-5",  0, False, 1, 1, 1, note="⚠️ Cosmos는 학습 품질 불확실. 잠정적 지원"),
+        "cosmos_predict2":  _p(64,1024, "5e-5",  0, True,  1, 1, 1, note="float8_e5m2 사용 필수"),
+        "omnigen2":         _p(64,1024, "5e-5",  0, True,  1, 1, 1),
+        "ideogram4":        _p(64, 768, "1e-4",  0, True,  1, 1, 1),
+        "ernie_image":      _p(64,1024, "1e-4",  0, True,  1, 1, 1),
+        "anima":            _p(64,1024, "5e-5",  0, False, 1, 1, 1),
+        "krea2":            _p(128,1024,"1e-4",  0, True,  1, 1, 1),
+        "auraflow":         _p(64,1024, "1e-4",  0, True,  1, 1, 1, max_seq=768),
+        "sd3":              _p(64,1024, "1e-4",  0, True,  1, 1, 1),
+        "sdxl":             _p(64,1024, "4e-5",  0, False, 1, 1, 1),
+    },
+}
+# fmt: on
+
+
+def apply_vram_preset(model_label: str, vram_gb: int):
+    gr = require_gradio()
+    model_key = _get_model_key(model_label)
+    tier = VRAM_PRESETS.get(vram_gb, {})
+    p = tier.get(model_key, _IMPOSSIBLE)
+
+    if p is _IMPOSSIBLE:
+        msg = (
+            f"🚫 {model_label}은(는) {vram_gb}GB VRAM에서 학습이 불가능하거나 "
+            "지원되지 않습니다. 더 큰 VRAM 티어를 선택하세요."
+        )
+        return (
+            msg,
+            gr.update(), gr.update(), gr.update(), gr.update(),
+            gr.update(), gr.update(), gr.update(), gr.update(),
+        )
+
+    note = p.get("note") or ""
+    msg = f"✅ {model_label} — {vram_gb}GB 프리셋 적용됨."
+    if note:
+        msg += f"\n{note}"
+
+    max_seq_up = gr.update(value=p["max_seq"]) if p.get("max_seq") is not None else gr.update()
+
+    return (
+        msg,
+        gr.update(value=p["res"]),
+        gr.update(value=p["rank"]),
+        gr.update(value=p["lr"]),
+        gr.update(value=p["blocks"]),
+        gr.update(value=p["float8"]),
+        gr.update(value=p["batch"]),
+        gr.update(value=p["grad"]),
+        max_seq_up,
+    )
+
+
 TRAIN_PROC: subprocess.Popen | None = None
 TRAIN_PID: int | None = None
 TRAIN_LOG: Path | None = None
@@ -1237,6 +1413,15 @@ def build_ui():
             config = gr.Dropdown(label="Config", choices=list_configs(), interactive=True)
             refresh = gr.Button("Refresh configs")
 
+        with gr.Row():
+            gr.Markdown("**VRAM 프리셋** — 모델 선택 후 클릭하면 아래 Config UI 항목에 추천값이 입력됩니다.")
+
+        with gr.Row():
+            btn_8gb  = gr.Button("⚡ 8GB  프리셋",  variant="secondary", scale=1)
+            btn_16gb = gr.Button("⚡ 16GB 프리셋", variant="primary",   scale=1)
+            btn_24gb = gr.Button("⚡ 24GB 프리셋",  variant="secondary", scale=1)
+            btn_32gb = gr.Button("⚡ 32GB 프리셋",  variant="secondary", scale=1)
+
         with gr.Accordion("⚙️ Generate config in UI", open=False):
             with gr.Row():
                 ui_model = gr.Dropdown(
@@ -1426,6 +1611,15 @@ def build_ui():
         ]
 
         ui_model.change(update_model_ui, inputs=ui_model, outputs=dynamic_outputs)
+
+        _preset_outputs = [
+            status, ui_resolution, ui_rank, ui_lr,
+            ui_blocks, ui_float8, ui_batch, ui_grad_accum, ui_max_seq,
+        ]
+        btn_8gb.click( lambda m: apply_vram_preset(m,  8), inputs=ui_model, outputs=_preset_outputs)
+        btn_16gb.click(lambda m: apply_vram_preset(m, 16), inputs=ui_model, outputs=_preset_outputs)
+        btn_24gb.click(lambda m: apply_vram_preset(m, 24), inputs=ui_model, outputs=_preset_outputs)
+        btn_32gb.click(lambda m: apply_vram_preset(m, 32), inputs=ui_model, outputs=_preset_outputs)
 
         ui_generate.click(
             generate_config_from_ui,
