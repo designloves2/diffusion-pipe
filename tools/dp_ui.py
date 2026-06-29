@@ -127,6 +127,36 @@ def stop_process(proc: subprocess.Popen | None, pid: int | None = None, force: b
         return "Process already stopped."
 
 
+def repo_windows_path() -> str:
+    try:
+        return subprocess.check_output(["wslpath", "-w", str(REPO_DIR)], text=True).strip()
+    except Exception:
+        return r"C:\ai\diffusion-pipe"
+
+
+def launch_windows_bat(filename: str) -> str:
+    bat_path = Path(repo_windows_path()) / filename
+    ps_command = f"Start-Process -FilePath {shlex.quote(str(bat_path))}"
+    try:
+        subprocess.Popen(
+            ["powershell.exe", "-NoProfile", "-Command", ps_command],
+            cwd=REPO_DIR,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except Exception as exc:
+        return f"Failed to launch {filename}: {exc}"
+    return f"Launched {filename}. Complete it in the new console window, then click Refresh configs."
+
+
+def launch_dp_wizard() -> str:
+    return launch_windows_bat("dp_wizard.bat")
+
+
+def launch_aitk_converter() -> str:
+    return launch_windows_bat("AITK_to_diffusion_pipe.bat")
+
+
 def latest_train_log() -> Path | None:
     if not LOG_ROOT.exists():
         return None
@@ -357,6 +387,11 @@ def build_ui():
             config = gr.Dropdown(label="Config", choices=list_configs(), interactive=True)
             refresh = gr.Button("Refresh configs")
 
+        gr.Markdown("### Config tools")
+        with gr.Row():
+            open_wizard = gr.Button("Open multi-model wizard")
+            open_aitk_converter = gr.Button("Open AI-Toolkit converter")
+
         with gr.Row():
             action = gr.Radio(
                 label="Action",
@@ -393,6 +428,8 @@ def build_ui():
         tb_embed = gr.HTML(label="TensorBoard")
 
         refresh.click(refresh_configs, outputs=config)
+        open_wizard.click(launch_dp_wizard, outputs=status)
+        open_aitk_converter.click(launch_aitk_converter, outputs=status)
         start.click(start_training, inputs=[config, action, checkpoint], outputs=[status, log])
         stop.click(stop_training, outputs=[status, log])
         force_stop.click(force_stop_training, outputs=[status, log])
