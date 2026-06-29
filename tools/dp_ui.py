@@ -146,7 +146,11 @@ def launch_windows_bat(filename: str) -> str:
         )
     except Exception as exc:
         return f"Failed to launch {filename}: {exc}"
-    return f"Launched {filename}. Complete it in the new console window, then click Refresh configs."
+    return (
+        f"Launched {filename}. A console window should open immediately. "
+        "If it looks quiet, WSL/micromamba is loading and can take 10-30 seconds. "
+        "Complete the prompts there, then click Refresh configs."
+    )
 
 
 def launch_dp_wizard() -> str:
