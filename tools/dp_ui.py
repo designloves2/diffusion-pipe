@@ -134,9 +134,13 @@ def repo_windows_path() -> str:
         return r"C:\ai\diffusion-pipe"
 
 
-def launch_windows_bat(filename: str) -> str:
+def launch_windows_bat(filename: str, args: list[str] | None = None) -> str:
     bat_path = Path(repo_windows_path()) / filename
+    args = args or []
     ps_command = f"Start-Process -FilePath {shlex.quote(str(bat_path))}"
+    if args:
+        ps_args = ", ".join("'" + arg.replace("'", "''") + "'" for arg in args)
+        ps_command += f" -ArgumentList @({ps_args})"
     try:
         subprocess.Popen(
             ["powershell.exe", "-NoProfile", "-Command", ps_command],
@@ -157,7 +161,17 @@ def launch_dp_wizard() -> str:
     return launch_windows_bat("dp_wizard.bat")
 
 
-def launch_aitk_converter() -> str:
+def launch_aitk_converter(config_yaml: str) -> str:
+    config_yaml = (config_yaml or "").strip()
+    if config_yaml:
+        path = Path(win_to_wsl(config_yaml))
+        if not path.is_file():
+            return (
+                "AI-Toolkit config.yaml was not found. "
+                "Paste the full path to config.yaml, or leave this field blank to choose it in the console. "
+                "AI-Toolkit itself does not need to be installed."
+            )
+        return launch_windows_bat("AITK_to_diffusion_pipe.bat", ["--config", config_yaml])
     return launch_windows_bat("AITK_to_diffusion_pipe.bat")
 
 
@@ -395,6 +409,10 @@ def build_ui():
         with gr.Row():
             open_wizard = gr.Button("Open multi-model wizard")
             open_aitk_converter = gr.Button("Open AI-Toolkit converter")
+        aitk_config = gr.Textbox(
+            label="AI-Toolkit config.yaml path (optional)",
+            placeholder='Paste config.yaml path, e.g. "C:\\AI\\AI-Toolkit\\output\\RUN\\config.yaml"',
+        )
 
         with gr.Row():
             action = gr.Radio(
@@ -433,7 +451,7 @@ def build_ui():
 
         refresh.click(refresh_configs, outputs=config)
         open_wizard.click(launch_dp_wizard, outputs=status)
-        open_aitk_converter.click(launch_aitk_converter, outputs=status)
+        open_aitk_converter.click(launch_aitk_converter, inputs=aitk_config, outputs=status)
         start.click(start_training, inputs=[config, action, checkpoint], outputs=[status, log])
         stop.click(stop_training, outputs=[status, log])
         force_stop.click(force_stop_training, outputs=[status, log])

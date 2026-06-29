@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import argparse
 import re
 from pathlib import Path
 
@@ -126,9 +127,16 @@ def list_aitk_configs() -> list[Path]:
     return sorted(dict.fromkeys(found))
 
 
-def choose_yaml() -> Path:
+def choose_yaml(default_config: str | None = None) -> Path:
+    if default_config:
+        path = Path(win_to_wsl(default_config))
+        if path.is_file():
+            return path
+        print(f"Provided AI-Toolkit config.yaml was not found: {path}")
+
     configs = list_aitk_configs()
     print("AI-Toolkit config.yaml -> diffusion-pipe converter")
+    print("AI-Toolkit does not need to be installed. You only need an existing config.yaml.")
     for idx, path in enumerate(configs[:50], start=1):
         print(f"  {idx}. {path}")
     while True:
@@ -283,8 +291,8 @@ max_sequence_length = {max_len}
     raise RuntimeError(f"Unhandled model: {model_key}")
 
 
-def convert() -> tuple[Path, Path]:
-    yaml_path = choose_yaml()
+def convert(default_config: str | None = None) -> tuple[Path, Path]:
+    yaml_path = choose_yaml(default_config)
     model_key, model_label = choose_model()
     data = yaml.safe_load(yaml_path.read_text(encoding="utf-8")) or {}
     proc = first_process(data)
@@ -408,7 +416,11 @@ wandb_run_name = {quote_toml(run_name)}
 
 
 def main() -> int:
-    dataset_config, train_config = convert()
+    parser = argparse.ArgumentParser(description="Convert an AI-Toolkit config.yaml to diffusion-pipe configs.")
+    parser.add_argument("--config", help="Path to an AI-Toolkit config.yaml. Windows paths and quoted paths are accepted.")
+    args = parser.parse_args()
+
+    dataset_config, train_config = convert(args.config)
     print("\nConverted config")
     print(f"  dataset config: {dataset_config}")
     print(f"  train config:   {train_config}")
