@@ -66,9 +66,39 @@ Write-Host "InstallRoot: $InstallRoot"
 Write-Host "Env:         $EnvPrefix"
 
 if (-not (Get-Command "nvidia-smi.exe" -ErrorAction SilentlyContinue)) {
-    Warn "nvidia-smi was not found on Windows PATH. Install/update NVIDIA drivers before training."
+    Write-Host ""
+    Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+    Write-Host "  NVIDIA driver not found." -ForegroundColor Red
+    Write-Host "  Install the latest driver before training:" -ForegroundColor Red
+    Write-Host "  https://www.nvidia.com/drivers" -ForegroundColor Yellow
+    Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+    Write-Host ""
+    throw "NVIDIA driver required. Please install it and re-run."
 } else {
-    & nvidia-smi.exe --query-gpu=name,driver_version,memory.total --format=csv
+    $gpuInfo = & nvidia-smi.exe --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>$null
+    Write-Host $gpuInfo
+
+    # CUDA 13.0 (PyTorch nightly cu130) requires driver >= 570.00
+    $minDriver = 570
+    $driverLine = ($gpuInfo -split "`n")[0]
+    if ($driverLine -match ",\s*([\d]+)\.([\d]+),") {
+        $driverMajor = [int]$Matches[1]
+        if ($driverMajor -lt $minDriver) {
+            Write-Host ""
+            Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+            Write-Host "  Driver version $driverMajor.$($Matches[2]) is too old." -ForegroundColor Red
+            Write-Host "  PyTorch cu130 requires driver 570.00 or newer." -ForegroundColor Red
+            Write-Host "  Please update your NVIDIA driver and re-run:" -ForegroundColor Red
+            Write-Host "  https://www.nvidia.com/drivers" -ForegroundColor Yellow
+            Write-Host "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" -ForegroundColor Red
+            Write-Host ""
+            throw "Driver too old (found $driverMajor, need >= $minDriver). Please update and re-run."
+        } else {
+            Write-Host "Driver $driverMajor.$($Matches[2]) OK (>= $minDriver required for cu130)." -ForegroundColor Green
+        }
+    } else {
+        Warn "Could not parse driver version. Continuing — if CUDA fails, update your driver to 570+ from https://www.nvidia.com/drivers"
+    }
 }
 
 Step "Preparing repository"
