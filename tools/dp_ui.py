@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import os
+import shlex
 import signal
 import subprocess
 import time
@@ -11,8 +12,10 @@ REPO_DIR = Path(__file__).resolve().parents[1]
 CONFIG_ROOT = REPO_DIR / "configs" / "generated"
 RUN_ROOT = REPO_DIR / "training_runs"
 LOG_ROOT = REPO_DIR / "ui_logs"
+TRAIN_PID_FILE = LOG_ROOT / "current_train.pid"
 
 TRAIN_PROC: subprocess.Popen | None = None
+TRAIN_PID: int | None = None
 TRAIN_LOG: Path | None = None
 TB_PROC: subprocess.Popen | None = None
 TB_LOG: Path | None = None
@@ -71,11 +74,48 @@ def tail(path: Path | None, lines: int = 80) -> str:
     return "\n".join(data[-lines:])
 
 
+def pid_alive(pid: int | None) -> bool:
+    if pid is None:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+
+
+def read_train_pid() -> int | None:
+    if not TRAIN_PID_FILE.exists():
+        return None
+    text = TRAIN_PID_FILE.read_text(errors="replace").strip()
+    return int(text) if text.isdigit() else None
+
+
+def write_train_pid(pid: int) -> None:
+    LOG_ROOT.mkdir(exist_ok=True)
+    TRAIN_PID_FILE.write_text(str(pid), encoding="utf-8")
+
+
 def process_alive(proc: subprocess.Popen | None) -> bool:
+    if pid_alive(TRAIN_PID):
+        return True
+    if pid_alive(read_train_pid()):
+        return True
     return proc is not None and proc.poll() is None
 
 
-def stop_process(proc: subprocess.Popen | None) -> str:
+def stop_process(proc: subprocess.Popen | None, pid: int | None = None, force: bool = False) -> str:
+    pid = pid or read_train_pid()
+    if pid_alive(pid):
+        try:
+            sig = signal.SIGKILL if force else signal.SIGTERM
+            os.killpg(pid, sig)
+            if TRAIN_PID_FILE.exists():
+                TRAIN_PID_FILE.unlink()
+            action = "Force stop" if force else "Stop"
+            return f"{action} signal sent to process group {pid}."
+        except ProcessLookupError:
+            return "Process already stopped."
     if proc is None:
         return "No process was started from this UI."
     if proc.poll() is not None:
@@ -87,8 +127,26 @@ def stop_process(proc: subprocess.Popen | None) -> str:
         return "Process already stopped."
 
 
+def latest_train_log() -> Path | None:
+    if not LOG_ROOT.exists():
+        return None
+    logs = sorted(LOG_ROOT.glob("train_*.log"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return logs[0] if logs else None
+
+
+def attach_latest_log() -> tuple[str, str]:
+    global TRAIN_LOG, TRAIN_PID
+    TRAIN_LOG = latest_train_log()
+    TRAIN_PID = read_train_pid()
+    if TRAIN_LOG is None:
+        return "No UI training log found.", "No log yet."
+    pid_text = f" PID: {TRAIN_PID}" if TRAIN_PID else ""
+    alive_text = " alive" if pid_alive(TRAIN_PID) else ""
+    return f"Attached log: {TRAIN_LOG}{pid_text}{alive_text}", tail(TRAIN_LOG)
+
+
 def start_training(choice: str, action: str, checkpoint: str) -> tuple[str, str]:
-    global TRAIN_PROC, TRAIN_LOG
+    global TRAIN_PROC, TRAIN_PID, TRAIN_LOG
     if process_alive(TRAIN_PROC):
         return "A training/cache job is already running from this UI.", tail(TRAIN_LOG)
 
@@ -112,22 +170,32 @@ def start_training(choice: str, action: str, checkpoint: str) -> tuple[str, str]
     stamp = time.strftime("%Y%m%d_%H%M%S")
     TRAIN_LOG = LOG_ROOT / f"train_{stamp}.log"
     cmd = ["deepspeed", "--num_gpus=1", "train.py", "--deepspeed", "--config", cfg.as_posix(), *extra]
-    log_file = TRAIN_LOG.open("w", encoding="utf-8", errors="replace")
-    log_file.write("Running:\n" + " ".join(cmd) + "\n\n")
-    log_file.flush()
+    TRAIN_LOG.write_text("Running detached:\n" + " ".join(cmd) + "\n\n", encoding="utf-8")
+    quoted_cmd = " ".join(shlex.quote(part) for part in cmd)
+    quoted_log = shlex.quote(TRAIN_LOG.as_posix())
+    launcher = f"nohup setsid {quoted_cmd} >> {quoted_log} 2>&1 < /dev/null & echo $!"
     TRAIN_PROC = subprocess.Popen(
-        cmd,
+        ["bash", "-lc", launcher],
         cwd=REPO_DIR,
-        stdout=log_file,
-        stderr=subprocess.STDOUT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        preexec_fn=os.setsid,
     )
-    return f"Started PID {TRAIN_PROC.pid}. Log: {TRAIN_LOG}", tail(TRAIN_LOG)
+    stdout, stderr = TRAIN_PROC.communicate(timeout=10)
+    pid_text = stdout.strip().splitlines()[-1] if stdout.strip() else ""
+    if not pid_text.isdigit():
+        return f"Failed to start detached job. {stderr.strip()}", tail(TRAIN_LOG)
+    TRAIN_PID = int(pid_text)
+    write_train_pid(TRAIN_PID)
+    return f"Started detached PID {TRAIN_PID}. Closing the Gradio/browser window will not stop this job. Log: {TRAIN_LOG}", tail(TRAIN_LOG)
 
 
 def stop_training() -> tuple[str, str]:
-    return stop_process(TRAIN_PROC), tail(TRAIN_LOG)
+    return stop_process(TRAIN_PROC, TRAIN_PID), tail(TRAIN_LOG)
+
+
+def force_stop_training() -> tuple[str, str]:
+    return stop_process(TRAIN_PROC, TRAIN_PID, force=True), tail(TRAIN_LOG)
 
 
 def tensorboard_frame(port: str) -> str:
@@ -300,6 +368,8 @@ def build_ui():
         with gr.Row():
             start = gr.Button("Start", variant="primary")
             stop = gr.Button("Stop job", variant="stop")
+            force_stop = gr.Button("Force stop", variant="stop")
+            attach_log = gr.Button("Attach latest UI log")
 
         status = gr.Textbox(label="Status", lines=4)
         log = gr.Textbox(label="Training log tail", lines=18)
@@ -325,6 +395,8 @@ def build_ui():
         refresh.click(refresh_configs, outputs=config)
         start.click(start_training, inputs=[config, action, checkpoint], outputs=[status, log])
         stop.click(stop_training, outputs=[status, log])
+        force_stop.click(force_stop_training, outputs=[status, log])
+        attach_log.click(attach_latest_log, outputs=[status, log])
         gpu.click(gpu_status, outputs=info)
         runs.click(recent_runs, outputs=info)
         checkpoints.click(saved_checkpoints, inputs=config, outputs=info)
