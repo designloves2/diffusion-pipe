@@ -676,15 +676,6 @@ def build_ui():
             config = gr.Dropdown(label="Config", choices=list_configs(), interactive=True)
             refresh = gr.Button("Refresh configs")
 
-        gr.Markdown("### Config tools")
-        with gr.Row():
-            open_wizard = gr.Button("Open multi-model wizard")
-            open_aitk_converter = gr.Button("Open AI-Toolkit converter")
-        aitk_config = gr.Textbox(
-            label="AI-Toolkit config.yaml path (optional)",
-            placeholder='Paste config.yaml path, e.g. "C:\\AI\\AI-Toolkit\\output\\RUN\\config.yaml"',
-        )
-
         with gr.Accordion("Generate config in UI", open=False):
             with gr.Row():
                 ui_model = gr.Dropdown(label="Model", choices=list(MODEL_LABELS.keys()), value="Krea 2")
@@ -763,8 +754,6 @@ def build_ui():
         tb_embed = gr.HTML(label="TensorBoard")
 
         refresh.click(refresh_configs, outputs=config)
-        open_wizard.click(launch_dp_wizard, outputs=status)
-        open_aitk_converter.click(launch_aitk_converter, inputs=aitk_config, outputs=status)
         ui_generate.click(
             generate_config_from_ui,
             inputs=[
