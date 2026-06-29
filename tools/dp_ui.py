@@ -1874,8 +1874,16 @@ def build_ui():
             force_stop = gr.Button("⚡ Force stop", variant="stop")
             attach_log = gr.Button("📎 Attach latest UI log")
 
+        with gr.Row():
+            log_refresh_interval = gr.Number(
+                label="로그 자동 갱신 주기 (초, 0 = 수동)",
+                value=3, precision=0, minimum=0, maximum=60, scale=1,
+            )
+            log_refresh_btn = gr.Button("🔄 로그 수동 갱신", scale=2)
+
         status = gr.Textbox(label="Status", lines=4)
-        log = gr.Textbox(label="Training log tail", lines=18)
+        log = gr.Textbox(label="Training log tail (실시간)", lines=18)
+        log_timer = gr.Timer(value=3, active=False)
 
         with gr.Row():
             gpu = gr.Button("📊 GPU / process status")
@@ -1979,11 +1987,41 @@ def build_ui():
             outputs=[status, config],
         )
 
+        def _tail_log():
+            return tail(TRAIN_LOG)
+
+        def _start_with_timer(cfg, act, ckpt, interval):
+            st, lg = start_training(cfg, act, ckpt)
+            active = int(interval or 0) > 0
+            iv = max(1, int(interval or 3))
+            return st, lg, gr.update(active=active, value=iv)
+
+        def _stop_with_timer():
+            st, lg = stop_training()
+            return st, lg, gr.update(active=False)
+
+        def _force_stop_with_timer():
+            st, lg = force_stop_training()
+            return st, lg, gr.update(active=False)
+
+        def _set_timer_interval(interval):
+            iv = int(interval or 0)
+            if iv > 0:
+                return gr.update(active=True, value=iv)
+            return gr.update(active=False)
+
         refresh.click(refresh_configs, outputs=config)
-        start.click(start_training, inputs=[config, action, checkpoint], outputs=[status, log])
-        stop.click(stop_training, outputs=[status, log])
-        force_stop.click(force_stop_training, outputs=[status, log])
+        start.click(
+            _start_with_timer,
+            inputs=[config, action, checkpoint, log_refresh_interval],
+            outputs=[status, log, log_timer],
+        )
+        stop.click(_stop_with_timer, outputs=[status, log, log_timer])
+        force_stop.click(_force_stop_with_timer, outputs=[status, log, log_timer])
         attach_log.click(attach_latest_log, outputs=[status, log])
+        log_refresh_btn.click(_tail_log, outputs=log)
+        log_refresh_interval.change(_set_timer_interval, inputs=log_refresh_interval, outputs=log_timer)
+        log_timer.tick(_tail_log, outputs=log)
         gpu.click(gpu_status, outputs=info)
         runs.click(recent_runs, outputs=info)
         checkpoints.click(saved_checkpoints, inputs=config, outputs=info)
