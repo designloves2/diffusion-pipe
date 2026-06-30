@@ -1210,17 +1210,10 @@ def force_stop_training() -> tuple[str, str]:
     return stop_process(TRAIN_PROC, TRAIN_PID, force=True), tail(TRAIN_LOG)
 
 
-def restart_training(config_choice: str, action: str, checkpoint: str) -> tuple[str, str]:
-    import time
-    stop_msg = stop_process(TRAIN_PROC, TRAIN_PID, force=True)
-    # Wait up to 10s for the process to die
-    for _ in range(20):
-        pid = TRAIN_PID or read_train_pid()
-        if not pid_alive(pid):
-            break
-        time.sleep(0.5)
-    start_msg, log_out = start_training(config_choice, action, checkpoint)
-    return f"[재시작] {stop_msg}\n{start_msg}", log_out
+def restart_ui() -> None:
+    """Restart the dp_ui.py process itself."""
+    import sys, os
+    os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 def tensorboard_frame(port: str) -> str:
@@ -2040,19 +2033,9 @@ def build_ui():
             inputs=[config, action, checkpoint, log_refresh_interval],
             outputs=[status, log, log_timer],
         )
-        def _restart_with_timer(cfg, act, ckpt, interval):
-            st, lg = restart_training(cfg, act, ckpt)
-            active = int(interval or 0) > 0
-            iv = max(1, int(interval or 3))
-            return st, lg, gr.update(active=active, value=iv)
-
         stop.click(_stop_with_timer, outputs=[status, log, log_timer])
         force_stop.click(_force_stop_with_timer, outputs=[status, log, log_timer])
-        restart.click(
-            _restart_with_timer,
-            inputs=[config, action, checkpoint, log_refresh_interval],
-            outputs=[status, log, log_timer],
-        )
+        restart.click(restart_ui)
         attach_log.click(attach_latest_log, outputs=[status, log])
         log_refresh_btn.click(_tail_log, outputs=log)
         log_refresh_interval.change(_set_timer_interval, inputs=log_refresh_interval, outputs=log_timer)
