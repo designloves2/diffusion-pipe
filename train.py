@@ -857,12 +857,30 @@ if __name__ == '__main__':
     # which starts creating dataloader internal state
     if resume_from_checkpoint:
         param_groups = optimizer.param_groups.copy()
+        # Patch MixedPrecisionOps.Linear._load_from_state_dict so that when a weight
+        # key is absent from the checkpoint (LoRA resume: only LoRA weights are saved),
+        # the existing weight is kept instead of being overwritten with None.
+        try:
+            from comfy.ops import _load_quantized_module, MixedPrecisionOps
+            _orig_load = MixedPrecisionOps.Linear._load_from_state_dict
+            def _safe_load(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs):
+                if f"{prefix}weight" not in state_dict and getattr(self, 'weight', None) is not None:
+                    return  # weight not in checkpoint but already loaded — skip to preserve it
+                _orig_load(self, state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
+            MixedPrecisionOps.Linear._load_from_state_dict = _safe_load
+            _patched = True
+        except Exception:
+            _patched = False
+
         load_path, client_state = model_engine.load_checkpoint(
             run_dir,
             load_module_strict=False,
             load_lr_scheduler_states='force_constant_lr' not in config and not args.reset_optimizer and not args.reset_optimizer_params,
             load_optimizer_states=not args.reset_optimizer,
         )
+
+        if _patched:
+            MixedPrecisionOps.Linear._load_from_state_dict = _orig_load
         if args.reset_optimizer_params:
             optimizer.param_groups = param_groups
         dist.barrier()  # just so the print below doesn't get swamped
@@ -879,11 +897,6 @@ if __name__ == '__main__':
         del client_state
         if is_main_process():
             print(f'Resuming training from checkpoint. Resuming at epoch: {train_dataloader.epoch}, step: {step}')
-        # Re-initialize block swap device placement after DeepSpeed loads the checkpoint,
-        # because load_checkpoint may leave non-swapped layers (e.g. self.first) with weight=None
-        # due to the PipelineModule.to() no-op patch applied for block swapping.
-        if blocks_to_swap := config.get('blocks_to_swap', 0):
-            model.prepare_block_swap_training()
 
     if 'force_constant_lr' in config:
         model_engine.lr_scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1.0)
