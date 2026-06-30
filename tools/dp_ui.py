@@ -1259,6 +1259,15 @@ def start_tensorboard(logdir: str, port: str) -> tuple[str, str]:
         text=True,
         preexec_fn=os.setsid,
     )
+    # Wait for TensorBoard to be ready (poll port)
+    import socket
+    for _ in range(20):
+        time.sleep(0.5)
+        try:
+            with socket.create_connection(("localhost", int(port)), timeout=0.3):
+                break
+        except OSError:
+            pass
     return f"Started TensorBoard: http://localhost:{port}", tensorboard_frame(port)
 
 
@@ -1913,6 +1922,7 @@ def build_ui():
         with gr.Row():
             tb_start = gr.Button("Start TensorBoard")
             tb_stop = gr.Button("Stop TensorBoard")
+            tb_reload = gr.Button("🔄 화면 새로고침")
 
         tb_status = gr.Textbox(label="TensorBoard status", lines=2)
         tb_embed = gr.HTML(label="TensorBoard")
@@ -2052,6 +2062,7 @@ def build_ui():
         checkpoints.click(saved_checkpoints, inputs=config, outputs=info)
         tb_start.click(start_tensorboard, inputs=[tb_logdir, tb_port], outputs=[tb_status, tb_embed])
         tb_stop.click(stop_tensorboard, outputs=[tb_status, tb_embed])
+        tb_reload.click(lambda p: tensorboard_frame(p), inputs=tb_port, outputs=tb_embed)
 
     return app
 
