@@ -879,6 +879,11 @@ if __name__ == '__main__':
         del client_state
         if is_main_process():
             print(f'Resuming training from checkpoint. Resuming at epoch: {train_dataloader.epoch}, step: {step}')
+        # Re-initialize block swap device placement after DeepSpeed loads the checkpoint,
+        # because load_checkpoint may leave non-swapped layers (e.g. self.first) with weight=None
+        # due to the PipelineModule.to() no-op patch applied for block swapping.
+        if blocks_to_swap := config.get('blocks_to_swap', 0):
+            model.prepare_block_swap_training()
 
     if 'force_constant_lr' in config:
         model_engine.lr_scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer, factor=1.0)
