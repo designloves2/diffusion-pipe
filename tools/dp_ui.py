@@ -2059,7 +2059,11 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=7860)
     args, _ = parser.parse_known_args()
     app = build_ui()
-    app.launch(server_name="0.0.0.0", server_port=args.port, inbrowser=True)
+    subprocess.Popen(
+        ["powershell.exe", "-NoProfile", "-Command", f"Start-Process http://localhost:{args.port}"],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    app.launch(server_name="0.0.0.0", server_port=args.port, inbrowser=False)
 
 
 if __name__ == "__main__":
