@@ -3,9 +3,17 @@ import os
 import shlex
 import signal
 import subprocess
+import sys
 import time
 import tomllib
 from pathlib import Path
+
+# Auto-install missing optional dependencies
+def _ensure_pkg(pkg: str, import_name: str | None = None) -> None:
+    try:
+        __import__(import_name or pkg)
+    except ImportError:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", pkg])
 
 
 REPO_DIR = Path(__file__).resolve().parents[1]
@@ -1278,6 +1286,7 @@ def stop_tensorboard() -> tuple[str, str]:
 
 
 def get_system_stats() -> str:
+    _ensure_pkg("psutil")
     try:
         import psutil
         cpu = psutil.cpu_percent(interval=None)
