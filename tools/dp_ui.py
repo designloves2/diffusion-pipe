@@ -2035,7 +2035,10 @@ def build_ui():
         )
         stop.click(_stop_with_timer, outputs=[status, log, log_timer])
         force_stop.click(_force_stop_with_timer, outputs=[status, log, log_timer])
-        restart.click(restart_ui)
+        restart.click(
+            restart_ui,
+            js="() => confirm('UI를 재시작하시겠습니까?\\n(학습 프로세스는 계속 실행됩니다)')",
+        )
         attach_log.click(attach_latest_log, outputs=[status, log])
         log_refresh_btn.click(_tail_log, outputs=log)
         log_refresh_interval.change(_set_timer_interval, inputs=log_refresh_interval, outputs=log_timer)
