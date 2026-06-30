@@ -1883,9 +1883,9 @@ def build_ui():
 
         with gr.Row():
             start = gr.Button("▶ Start", variant="primary")
-            restart = gr.Button("🔁 Restart", variant="secondary")
             stop = gr.Button("⏹ Stop job", variant="stop")
             force_stop = gr.Button("⚡ Force stop", variant="stop")
+            restart = gr.Button("🔁 Restart", variant="secondary")
             attach_log = gr.Button("📎 Attach latest UI log")
 
         with gr.Row():
