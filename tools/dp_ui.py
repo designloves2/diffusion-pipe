@@ -1277,6 +1277,60 @@ def stop_tensorboard() -> tuple[str, str]:
     return "TensorBoard was not running.", ""
 
 
+def get_system_stats() -> str:
+    try:
+        import psutil
+        cpu = psutil.cpu_percent(interval=None)
+        ram = psutil.virtual_memory()
+        ram_pct = ram.percent
+        ram_used = ram.used / 1024**3
+        ram_total = ram.total / 1024**3
+    except Exception:
+        cpu = ram_pct = ram_used = ram_total = 0
+
+    gpu_pct = vram_pct = vram_used = vram_total = 0
+    try:
+        out = subprocess.check_output(
+            ["nvidia-smi", "--query-gpu=utilization.gpu,memory.used,memory.total",
+             "--format=csv,noheader,nounits"],
+            text=True, timeout=3,
+        ).strip().split(",")
+        gpu_pct = float(out[0].strip())
+        vram_used = float(out[1].strip()) / 1024
+        vram_total = float(out[2].strip()) / 1024
+        vram_pct = vram_used / vram_total * 100 if vram_total else 0
+    except Exception:
+        pass
+
+    def bar(pct: float) -> str:
+        color = "#4ade80" if pct < 60 else "#facc15" if pct < 80 else "#f87171"
+        return (
+            f'<div style="flex:1;background:#2a2a2a;border-radius:5px;height:16px;overflow:hidden;">'
+            f'<div style="width:{pct:.1f}%;background:{color};height:100%;'
+            f'transition:width 0.4s ease;border-radius:5px;"></div></div>'
+        )
+
+    def row(label: str, pct: float, detail: str) -> str:
+        return (
+            f'<div style="display:flex;align-items:center;gap:10px;margin:5px 0;">'
+            f'<span style="width:42px;font-size:12px;color:#aaa;text-align:right;">{label}</span>'
+            f'{bar(pct)}'
+            f'<span style="width:100px;font-size:12px;color:#eee;white-space:nowrap;">'
+            f'{pct:.1f}%&nbsp;&nbsp;<span style="color:#888">{detail}</span></span>'
+            f'</div>'
+        )
+
+    html = (
+        '<div style="padding:8px 4px;">'
+        + row("CPU", cpu, "")
+        + row("RAM", ram_pct, f"{ram_used:.1f}/{ram_total:.1f}GB")
+        + row("GPU", gpu_pct, "")
+        + row("VRAM", vram_pct, f"{vram_used:.1f}/{vram_total:.1f}GB")
+        + '</div>'
+    )
+    return html
+
+
 def gpu_status() -> str:
     cmd = [
         "nvidia-smi",
@@ -1897,6 +1951,9 @@ def build_ui():
             )
             log_refresh_btn = gr.Button("🔄 로그 수동 갱신", scale=2)
 
+        sys_stats = gr.HTML(value=get_system_stats(), label="시스템 사용률")
+        sys_timer = gr.Timer(value=2, active=True)
+
         status = gr.Textbox(label="Status", lines=4)
         log = gr.Textbox(label="Training log tail (실시간)", lines=18)
         log_timer = gr.Timer(value=3, active=False)
@@ -2043,6 +2100,7 @@ def build_ui():
         log_refresh_btn.click(_tail_log, outputs=log)
         log_refresh_interval.change(_set_timer_interval, inputs=log_refresh_interval, outputs=log_timer)
         log_timer.tick(_tail_log, outputs=log)
+        sys_timer.tick(get_system_stats, outputs=sys_stats)
         gpu.click(gpu_status, outputs=info)
         runs.click(recent_runs, outputs=info)
         checkpoints.click(saved_checkpoints, inputs=config, outputs=info)
